@@ -31,7 +31,7 @@ import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
 import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
-import { ReductoService } from './services/reducto';
+import { ClaudeService } from './services/claude';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
@@ -156,7 +156,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
     .register('persistedDefaults', PersistedDefaultsService)
-    .register('reducto', ReductoService)
+    .register('claude', ClaudeService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
     .register('session', SessionService)
