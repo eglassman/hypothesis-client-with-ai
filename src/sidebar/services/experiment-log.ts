@@ -11,6 +11,7 @@ export type ExperimentEvent =
       type: 'search';
       timestamp: string;
       username: string;
+      documentUri: string;
       searchRowId: string;
       query: string;
       schemaTag: string;
@@ -20,6 +21,7 @@ export type ExperimentEvent =
       type: 'accept';
       timestamp: string;
       username: string;
+      documentUri: string;
       annotationId: string;
       quoteText: string;
       schemaTag: string;
@@ -28,6 +30,7 @@ export type ExperimentEvent =
       type: 'reject';
       timestamp: string;
       username: string;
+      documentUri: string;
       annotationId: string;
       quoteText: string;
       schemaTag: string;
@@ -36,6 +39,7 @@ export type ExperimentEvent =
       type: 'delete-search';
       timestamp: string;
       username: string;
+      documentUri: string;
       searchRowId: string;
       query: string;
       schemaTag: string;
@@ -45,6 +49,7 @@ export type ExperimentEvent =
 export type AnnotationStatus = {
   annotationId: string;
   username: string;
+  documentUri: string;
   schemaTag: string;
   quoteText: string;
   searchRowId: string;
@@ -59,7 +64,7 @@ type UserLog = {
   annotationStatuses: Record<string, AnnotationStatus>;
 };
 
-type ExperimentLog = {
+export type ExperimentLog = {
   version: 1;
   exportedAt?: string;
   users: Record<string, UserLog>;
@@ -78,6 +83,11 @@ const STORAGE_KEY = 'hypothesis.experimentLog';
 /**
  * Logs user interactions with the AI search feature for HCI experiment
  * analysis. Data is persisted to localStorage and can be downloaded as JSON.
+ *
+ * Cross-tab sync: since `_load()` reads from localStorage on every call,
+ * events written by other tabs are automatically included. The browser's
+ * `storage` event is not needed for correctness here — each tab appends
+ * to the shared localStorage key and reads the latest state before writing.
  *
  * @inject
  */
@@ -129,6 +139,7 @@ export class ExperimentLogService {
     query: string;
     schemaTag: string;
     searchRowId: string;
+    documentUri: string;
     annotationIdsCreated: string[];
     quoteTexts: string[];
   }): void {
@@ -141,6 +152,7 @@ export class ExperimentLogService {
       type: 'search',
       timestamp: now,
       username: user,
+      documentUri: params.documentUri,
       searchRowId: params.searchRowId,
       query: params.query,
       schemaTag: params.schemaTag,
@@ -153,6 +165,7 @@ export class ExperimentLogService {
       userLog.annotationStatuses[annId] = {
         annotationId: annId,
         username: user,
+        documentUri: params.documentUri,
         schemaTag: params.schemaTag,
         quoteText: params.quoteTexts[i] ?? '',
         searchRowId: params.searchRowId,
@@ -170,6 +183,7 @@ export class ExperimentLogService {
     annotationId: string;
     quoteText: string;
     schemaTag: string;
+    documentUri: string;
   }): void {
     const log = this._load();
     const user = this._username();
@@ -180,6 +194,7 @@ export class ExperimentLogService {
       type: 'accept',
       timestamp: now,
       username: user,
+      documentUri: params.documentUri,
       annotationId: params.annotationId,
       quoteText: params.quoteText,
       schemaTag: params.schemaTag,
@@ -198,6 +213,7 @@ export class ExperimentLogService {
     annotationId: string;
     quoteText: string;
     schemaTag: string;
+    documentUri: string;
   }): void {
     const log = this._load();
     const user = this._username();
@@ -208,6 +224,7 @@ export class ExperimentLogService {
       type: 'reject',
       timestamp: now,
       username: user,
+      documentUri: params.documentUri,
       annotationId: params.annotationId,
       quoteText: params.quoteText,
       schemaTag: params.schemaTag,
@@ -226,6 +243,7 @@ export class ExperimentLogService {
     searchRowId: string;
     query: string;
     schemaTag: string;
+    documentUri: string;
     annotationIds: string[];
   }): void {
     const log = this._load();
@@ -236,6 +254,7 @@ export class ExperimentLogService {
       type: 'delete-search',
       timestamp: this._now(),
       username: user,
+      documentUri: params.documentUri,
       searchRowId: params.searchRowId,
       query: params.query,
       schemaTag: params.schemaTag,

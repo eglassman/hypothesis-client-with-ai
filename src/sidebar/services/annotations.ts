@@ -369,6 +369,7 @@ export class AnnotationsService {
         quoteText: metadata.quote(annotation) ?? '',
         schemaTag:
           tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '',
+        documentUri: annotation.uri,
       });
 
       return savedAnnotation;
@@ -380,6 +381,7 @@ export class AnnotationsService {
         quoteText: metadata.quote(annotation) ?? '',
         schemaTag:
           tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '',
+        documentUri: annotation.uri,
       });
 
       const id = annotation.id;

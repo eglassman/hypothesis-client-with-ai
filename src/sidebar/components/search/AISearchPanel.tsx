@@ -217,6 +217,7 @@ function AISearchPanel({
         query,
         schemaTag: schemaTagForRow,
         searchRowId: rowId,
+        documentUri: documentURL,
         annotationIdsCreated: newIds,
         quoteTexts: created.map(a => annotationQuote(a) ?? ''),
       });
@@ -290,6 +291,7 @@ function AISearchPanel({
       searchRowId: row.id,
       query: row.query,
       schemaTag: row.schemaTag,
+      documentUri: documentURL ?? '',
       annotationIds: row.annotationIds,
     });
     try {
