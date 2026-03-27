@@ -16,12 +16,14 @@ import {
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
+import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
 // import type { ReductoService } from '../../services/reducto';
 import type { ClaudeService } from '../../services/claude';
+import type { ExperimentLogService } from '../../services/experiment-log';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import type { AISearchRow } from '../../store/modules/sidebar-panels';
@@ -31,6 +33,7 @@ import SearchField from './SearchField';
 
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
+  experimentLog: ExperimentLogService;
   frameSync: FrameSyncService;
   // reducto: ReductoService;
   claude: ClaudeService;
@@ -40,6 +43,7 @@ type AISearchPanelProps = {
 
 function AISearchPanel({
   annotationsService,
+  experimentLog,
   frameSync,
   // reducto,
   claude,
@@ -132,6 +136,14 @@ function AISearchPanel({
       };
       store.addAISearchRow(row);
 
+      experimentLog.logSearch({
+        query,
+        schemaTag,
+        searchRowId: row.id,
+        annotationIdsCreated: row.annotationIds,
+        quoteTexts: created.map(a => annotationQuote(a) ?? ''),
+      });
+
       toastMessenger.success(
         `Created ${created.length} annotation(s) from AI results.`,
       );
@@ -143,6 +155,12 @@ function AISearchPanel({
 
   async function onDeleteRow(row: AISearchRow) {
     setDeletingRowId(row.id);
+    experimentLog.logDeleteSearch({
+      searchRowId: row.id,
+      query: row.query,
+      schemaTag: row.schemaTag,
+      annotationIds: row.annotationIds,
+    });
     try {
       for (const id of row.annotationIds) {
         const ann = store.findAnnotationByID(id);
@@ -329,6 +347,14 @@ function AISearchPanel({
             )}
           </div>
           <FilterControls />
+          <button
+            type="button"
+            className="mt-2 text-xs text-color-text-light hover:text-color-text underline"
+            title="Download experiment log as JSON"
+            onClick={() => experimentLog.downloadLog()}
+          >
+            Download experiment log
+          </button>
         </CardContent>
       </Card>
     </SidebarPanel>
@@ -337,6 +363,7 @@ function AISearchPanel({
 
 export default withServices(AISearchPanel, [
   'annotationsService',
+  'experimentLog',
   'frameSync',
   // 'reducto',
   'claude',
