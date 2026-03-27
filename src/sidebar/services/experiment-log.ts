@@ -36,6 +36,16 @@ export type ExperimentEvent =
       schemaTag: string;
     }
   | {
+      type: 'rerun-search';
+      timestamp: string;
+      username: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+      deletedAnnotationIds: string[];
+    }
+  | {
       type: 'delete-search';
       timestamp: string;
       username: string;
@@ -235,6 +245,31 @@ export class ExperimentLogService {
       status.status = 'rejected';
       status.resolvedAt = now;
     }
+
+    this._save(log);
+  }
+
+  logRerunSearch(params: {
+    searchRowId: string;
+    query: string;
+    schemaTag: string;
+    documentUri: string;
+    deletedAnnotationIds: string[];
+  }): void {
+    const log = this._load();
+    const user = this._username();
+    const userLog = this._ensureUser(log, user);
+
+    userLog.events.push({
+      type: 'rerun-search',
+      timestamp: this._now(),
+      username: user,
+      documentUri: params.documentUri,
+      searchRowId: params.searchRowId,
+      query: params.query,
+      schemaTag: params.schemaTag,
+      deletedAnnotationIds: params.deletedAnnotationIds,
+    });
 
     this._save(log);
   }

@@ -276,6 +276,14 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(deletedIds);
       }
 
+      experimentLog.logRerunSearch({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+      });
+
       await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
     } catch (err) {
       console.error(err);
