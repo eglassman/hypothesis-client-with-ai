@@ -22,6 +22,13 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       assert.deepEqual(ai.rows, []);
       assert.deepEqual(ai.schemaTagColors, {});
     });
+
+    it('sets initial `aiSearchNegativeExamples` empty', () => {
+      assert.deepEqual(
+        getSidebarPanelsState().aiSearchNegativeExamples,
+        [],
+      );
+    });
   });
 
   describe('reducers', () => {
@@ -138,6 +145,89 @@ describe('sidebar/store/modules/sidebar-panels', () => {
       );
     });
 
+    it('merges duplicate tag+query rows into keep row and unions annotation ids', () => {
+      store.addAISearchRow({
+        id: 'keep',
+        schemaTag: 't',
+        query: 'q1',
+        annotationIds: ['a1'],
+      });
+      store.addAISearchRow({
+        id: 'dup',
+        schemaTag: 't',
+        query: 'q1',
+        annotationIds: ['a2', 'a1'],
+      });
+      store.addAISearchRow({
+        id: 'other',
+        schemaTag: 'u',
+        query: 'q2',
+        annotationIds: ['x'],
+      });
+      store.mergeAISearchRowsWithSameTagQuery('keep');
+      const ai = getSidebarPanelsState().aiSearch;
+      assert.lengthOf(ai.rows, 2);
+      const merged = ai.rows.find(r => r.id === 'keep');
+      assert.deepEqual(merged.annotationIds, ['a1', 'a2']);
+      assert.isTrue(ai.rows.some(r => r.id === 'other'));
+    });
+
+    it('merge with trim-equivalent tag and query still merges', () => {
+      store.addAISearchRow({
+        id: 'k',
+        schemaTag: ' tag ',
+        query: ' q ',
+        annotationIds: ['1'],
+      });
+      store.addAISearchRow({
+        id: 'd',
+        schemaTag: 'tag',
+        query: 'q',
+        annotationIds: ['2'],
+      });
+      store.mergeAISearchRowsWithSameTagQuery('k');
+      assert.lengthOf(getSidebarPanelsState().aiSearch.rows, 1);
+    });
+
+    it('sets annotation ids on a single row', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 's',
+        query: 'q',
+        annotationIds: ['old'],
+      });
+      store.setAISearchRowAnnotationIds('r1', ['n1', 'n2']);
+      assert.deepEqual(
+        getSidebarPanelsState().aiSearch.rows[0].annotationIds,
+        ['n1', 'n2'],
+      );
+    });
+
+    it('removes annotation ids from all rows', () => {
+      store.addAISearchRow({
+        id: 'r1',
+        schemaTag: 'a',
+        query: 'q1',
+        annotationIds: ['x', 'y'],
+      });
+      store.addAISearchRow({
+        id: 'r2',
+        schemaTag: 'b',
+        query: 'q2',
+        annotationIds: ['y', 'z'],
+      });
+      store.removeAnnotationIdsFromAISearchRows(['y']);
+      const rows = getSidebarPanelsState().aiSearch.rows;
+      assert.deepEqual(
+        rows.find(r => r.id === 'r1').annotationIds,
+        ['x'],
+      );
+      assert.deepEqual(
+        rows.find(r => r.id === 'r2').annotationIds,
+        ['z'],
+      );
+    });
+
     describe('#HYDRATE_AI_SEARCH', () => {
       it('replaces the full aiSearch slice', () => {
         store.addAISearchRow({
@@ -172,6 +262,57 @@ describe('sidebar/store/modules/sidebar-panels', () => {
           'aiSearchAnnotations',
         );
       });
+    });
+  });
+
+  describe('aiSearchNegativeExamples reducers', () => {
+    it('adds a negative example', () => {
+      store.addAISearchNegativeExample({
+        id: 'n1',
+        schemaTag: 't',
+        query: 'q',
+        quote: 'qt',
+        documentUri: 'http://x',
+      });
+      assert.lengthOf(store.aiSearchNegativeExamples(), 1);
+      assert.equal(store.aiSearchNegativeExamples()[0].id, 'n1');
+    });
+
+    it('dedupes identical documentUri+tag+query+quote', () => {
+      const ex = {
+        id: 'n1',
+        schemaTag: 't',
+        query: 'q',
+        quote: 'qt',
+        documentUri: 'http://x',
+      };
+      store.addAISearchNegativeExample(ex);
+      store.addAISearchNegativeExample({ ...ex, id: 'n2' });
+      assert.lengthOf(store.aiSearchNegativeExamples(), 1);
+    });
+
+    it('removes by id', () => {
+      store.addAISearchNegativeExample({
+        id: 'n1',
+        schemaTag: 't',
+        query: 'q',
+        quote: 'qt',
+        documentUri: 'http://x',
+      });
+      store.removeAISearchNegativeExample('n1');
+      assert.lengthOf(store.aiSearchNegativeExamples(), 0);
+    });
+
+    it('hydrate replaces the list', () => {
+      store.addAISearchNegativeExample({
+        id: 'n1',
+        schemaTag: 't',
+        query: 'q',
+        quote: 'qt',
+        documentUri: 'http://x',
+      });
+      store.hydrateAISearchNegativeExamples([]);
+      assert.lengthOf(store.aiSearchNegativeExamples(), 0);
     });
   });
 

@@ -22,6 +22,15 @@ export type AISearchRow = {
   annotationIds: string[];
 };
 
+/** Local snapshot from a user-denied ai-pending annotation (not persisted on server). */
+export type AISearchNegativeExample = {
+  id: string;
+  schemaTag: string;
+  query: string;
+  quote: string;
+  documentUri: string;
+};
+
 export type AISearchState = {
   rows: AISearchRow[];
   schemaTagColors: Record<string, string>;
@@ -41,6 +50,12 @@ export type State = {
 
   /** Table rows and per–schema-tag highlight colors for the AI search panel. */
   aiSearch: AISearchState;
+
+  /**
+   * Locally stored negative training examples (declined ai-pending annotations).
+   * Persisted separately from `aiSearch`; see `PersistedAISearchService`.
+   */
+  aiSearchNegativeExamples: AISearchNegativeExample[];
 };
 
 const initialAiSearch: AISearchState = {
@@ -51,6 +66,7 @@ const initialAiSearch: AISearchState = {
 const initialState: State = {
   activePanelName: null,
   aiSearch: initialAiSearch, //TODO: Rename
+  aiSearchNegativeExamples: [],
 };
 
 const reducers = {
@@ -156,6 +172,112 @@ const reducers = {
       aiSearch: action.aiSearch,
     };
   },
+
+  /**
+   * Merge all rows with the same trimmed tag+query as `keepRowId` into that
+   * row (union of `annotationIds`) and remove the other duplicate rows.
+   */
+  MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY(
+    state: State,
+    action: { keepRowId: string },
+  ) {
+    const { rows } = state.aiSearch;
+    const keep = rows.find(r => r.id === action.keepRowId);
+    if (!keep) {
+      return state;
+    }
+    const tagKey = keep.schemaTag.trim();
+    const queryKey = keep.query.trim();
+    const sameKey = (r: AISearchRow) =>
+      r.schemaTag.trim() === tagKey && r.query.trim() === queryKey;
+
+    const unionIds = [
+      ...new Set(rows.filter(sameKey).flatMap(r => r.annotationIds)),
+    ];
+
+    const newRows = rows
+      .filter(r => !(sameKey(r) && r.id !== action.keepRowId))
+      .map(r =>
+        r.id === action.keepRowId ? { ...r, annotationIds: unionIds } : r,
+      );
+
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: newRows,
+      },
+    };
+  },
+
+  SET_AI_SEARCH_ROW_ANNOTATION_IDS(
+    state: State,
+    action: { rowId: string; annotationIds: string[] },
+  ) {
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: state.aiSearch.rows.map(r =>
+          r.id === action.rowId
+            ? { ...r, annotationIds: action.annotationIds }
+            : r,
+        ),
+      },
+    };
+  },
+
+  REMOVE_AI_SEARCH_ANNOTATION_IDS(
+    state: State,
+    action: { annotationIds: string[] },
+  ) {
+    const idSet = new Set(action.annotationIds);
+    return {
+      aiSearch: {
+        ...state.aiSearch,
+        rows: state.aiSearch.rows.map(r => ({
+          ...r,
+          annotationIds: r.annotationIds.filter(id => !idSet.has(id)),
+        })),
+      },
+    };
+  },
+
+  ADD_AI_SEARCH_NEGATIVE_EXAMPLE(
+    state: State,
+    action: { example: AISearchNegativeExample },
+  ) {
+    const ex = action.example;
+    const dedupeKey = `${ex.documentUri}\0${ex.schemaTag.trim()}\0${ex.query.trim()}\0${ex.quote}`;
+    const duplicate = state.aiSearchNegativeExamples.some(e => {
+      const k = `${e.documentUri}\0${e.schemaTag.trim()}\0${e.query.trim()}\0${e.quote}`;
+      return k === dedupeKey;
+    });
+    if (duplicate) {
+      return state;
+    }
+    return {
+      aiSearchNegativeExamples: [...state.aiSearchNegativeExamples, ex],
+    };
+  },
+
+  REMOVE_AI_SEARCH_NEGATIVE_EXAMPLE(
+    state: State,
+    action: { exampleId: string },
+  ) {
+    return {
+      aiSearchNegativeExamples: state.aiSearchNegativeExamples.filter(
+        e => e.id !== action.exampleId,
+      ),
+    };
+  },
+
+  HYDRATE_AI_SEARCH_NEGATIVE_EXAMPLES(
+    state: State,
+    action: { examples: AISearchNegativeExample[] },
+  ) {
+    return {
+      aiSearchNegativeExamples: action.examples,
+    };
+  },
 };
 
 /**
@@ -205,6 +327,41 @@ function hydrateAISearch(aiSearch: AISearchState) {
   return makeAction(reducers, 'HYDRATE_AI_SEARCH', { aiSearch });
 }
 
+function mergeAISearchRowsWithSameTagQuery(keepRowId: string) {
+  return makeAction(reducers, 'MERGE_AI_SEARCH_ROWS_SAME_TAG_QUERY', {
+    keepRowId,
+  });
+}
+
+function setAISearchRowAnnotationIds(rowId: string, annotationIds: string[]) {
+  return makeAction(reducers, 'SET_AI_SEARCH_ROW_ANNOTATION_IDS', {
+    rowId,
+    annotationIds,
+  });
+}
+
+function removeAnnotationIdsFromAISearchRows(annotationIds: string[]) {
+  return makeAction(reducers, 'REMOVE_AI_SEARCH_ANNOTATION_IDS', {
+    annotationIds,
+  });
+}
+
+function addAISearchNegativeExample(example: AISearchNegativeExample) {
+  return makeAction(reducers, 'ADD_AI_SEARCH_NEGATIVE_EXAMPLE', { example });
+}
+
+function removeAISearchNegativeExample(exampleId: string) {
+  return makeAction(reducers, 'REMOVE_AI_SEARCH_NEGATIVE_EXAMPLE', {
+    exampleId,
+  });
+}
+
+function hydrateAISearchNegativeExamples(examples: AISearchNegativeExample[]) {
+  return makeAction(reducers, 'HYDRATE_AI_SEARCH_NEGATIVE_EXAMPLES', {
+    examples,
+  });
+}
+
 /**
  * Is the panel indicated by `panelName` currently active (open)?
  */
@@ -220,6 +377,10 @@ function aiSearchSchemaTagColors(state: State) {
   return state.aiSearch.schemaTagColors;
 }
 
+function aiSearchNegativeExamples(state: State) {
+  return state.aiSearchNegativeExamples;
+}
+
 export const sidebarPanelsModule = createStoreModule(initialState, {
   namespace: 'sidebarPanels',
   reducers,
@@ -232,11 +393,18 @@ export const sidebarPanelsModule = createStoreModule(initialState, {
     removeAISearchRow,
     setAISearchSchemaTagColor,
     hydrateAISearch,
+    mergeAISearchRowsWithSameTagQuery,
+    setAISearchRowAnnotationIds,
+    removeAnnotationIdsFromAISearchRows,
+    addAISearchNegativeExample,
+    removeAISearchNegativeExample,
+    hydrateAISearchNegativeExamples,
   },
 
   selectors: {
     isSidebarPanelOpen,
     aiSearchRows,
     aiSearchSchemaTagColors,
+    aiSearchNegativeExamples,
   },
 });

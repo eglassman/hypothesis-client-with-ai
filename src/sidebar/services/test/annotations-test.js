@@ -58,6 +58,7 @@ describe('AnnotationsService', () => {
       isHighlight: sinon.stub(),
       isSaved: sinon.stub(),
       isPageNote: sinon.stub(),
+      quote: sinon.stub().returns(null),
     };
 
     fakeIsPrivate = sinon.stub();
@@ -78,6 +79,8 @@ describe('AnnotationsService', () => {
       openSidebarPanel: sinon.stub(),
       profile: sinon.stub().returns({}),
       removeAnnotations: sinon.stub(),
+      removeAnnotationIdsFromAISearchRows: sinon.stub(),
+      addAISearchNegativeExample: sinon.stub(),
       removeDraft: sinon.stub(),
       selectTab: sinon.stub(),
       setExpanded: sinon.stub(),
@@ -729,6 +732,7 @@ describe('AnnotationsService', () => {
     });
 
     it('deletes annotation when ai-pending and DENIED', async () => {
+      fakeMetadata.quote.returns(null);
       const annotation = {
         ...fixtures.defaultAnnotation(),
         tags: ['ai-pending'],
@@ -737,9 +741,46 @@ describe('AnnotationsService', () => {
       const result = await svc.moderate(annotation, 'DENIED');
 
       assert.notCalled(fakeApi.annotation.moderate);
+      assert.calledWith(
+        fakeStore.removeAnnotationIdsFromAISearchRows,
+        [annotation.id],
+      );
+      assert.notCalled(fakeStore.addAISearchNegativeExample);
       assert.calledWith(fakeApi.annotation.delete, { id: annotation.id });
       assert.calledWith(fakeStore.removeAnnotations, [annotation]);
       assert.equal(result, annotation);
+    });
+
+    it('stores negative example when ai-pending DENIED and quote exists', async () => {
+      sinon.stub(crypto, 'randomUUID').returns('neg-id-1');
+      fakeMetadata.quote.returns('the quote');
+      const annotation = {
+        ...fixtures.defaultAnnotation(),
+        tags: ['ai-pending', 'mytag'],
+        text: 'search query',
+        uri: 'http://example.com/doc.pdf',
+        target: [
+          {
+            source: 'http://example.com/doc.pdf',
+            selector: [{ type: 'TextQuoteSelector', exact: 'the quote' }],
+          },
+        ],
+      };
+
+      await svc.moderate(annotation, 'DENIED');
+
+      assert.calledWith(
+        fakeStore.removeAnnotationIdsFromAISearchRows,
+        [annotation.id],
+      );
+      assert.calledWith(fakeStore.addAISearchNegativeExample, {
+        id: 'neg-id-1',
+        schemaTag: 'mytag',
+        query: 'search query',
+        quote: 'the quote',
+        documentUri: 'http://example.com/doc.pdf',
+      });
+      crypto.randomUUID.restore();
     });
   });
 

@@ -62,7 +62,7 @@ export class ClaudeService {
         model: 'claude-sonnet-4-6',
         max_tokens: 2000,
         system:
-          'You extract relevant passages from documents that answer a user query.',
+          'You return verbatim quotes from the document at hand that answers or otherwise fulfills the user query.',
         messages: [
           {
             role: 'user',

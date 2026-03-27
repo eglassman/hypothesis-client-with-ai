@@ -1,7 +1,9 @@
 import { createStore } from '../../store/create-store';
 import { sidebarPanelsModule } from '../../store/modules/sidebar-panels';
 import {
+  AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
   AI_SEARCH_STORAGE_KEY,
+  parseAISearchNegativeExamplesState,
   parseAISearchState,
   PersistedAISearchService,
 } from '../persisted-ai-search';
@@ -30,6 +32,32 @@ describe('parseAISearchState', () => {
       schemaTagColors: { t: 'rgba(0,0,0,0.38)' },
     };
     assert.deepEqual(parseAISearchState(state), state);
+  });
+});
+
+describe('parseAISearchNegativeExamplesState', () => {
+  it('returns null for non-arrays', () => {
+    assert.isNull(parseAISearchNegativeExamplesState(null));
+    assert.isNull(parseAISearchNegativeExamplesState({}));
+  });
+
+  it('accepts a valid array of negative examples', () => {
+    const arr = [
+      {
+        id: '1',
+        schemaTag: 't',
+        query: 'q',
+        quote: 'qt',
+        documentUri: 'http://d',
+      },
+    ];
+    assert.deepEqual(parseAISearchNegativeExamplesState(arr), arr);
+  });
+
+  it('returns null when an entry is invalid', () => {
+    assert.isNull(
+      parseAISearchNegativeExamplesState([{ id: '1', schemaTag: 2 }]),
+    );
   });
 });
 
@@ -97,6 +125,29 @@ describe('PersistedAISearchService', () => {
       assert.deepEqual(store.getState().sidebarPanels.aiSearch, persisted);
     });
 
+    it('hydrates negative examples from localStorage when data is valid', () => {
+      fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns(null);
+      const neg = [
+        {
+          id: 'n1',
+          schemaTag: 't',
+          query: 'q',
+          quote: 'qt',
+          documentUri: 'http://d',
+        },
+      ];
+      fakeLocalStorage.getObject
+        .withArgs(AI_SEARCH_NEGATIVE_EXAMPLES_KEY)
+        .returns(neg);
+
+      createService().init();
+
+      assert.deepEqual(
+        store.getState().sidebarPanels.aiSearchNegativeExamples,
+        neg,
+      );
+    });
+
     it('does not hydrate when stored data is invalid', () => {
       fakeLocalStorage.getObject.withArgs(AI_SEARCH_STORAGE_KEY).returns({
         rows: 'bad',
@@ -123,6 +174,28 @@ describe('PersistedAISearchService', () => {
         fakeLocalStorage.setObject,
         AI_SEARCH_STORAGE_KEY,
         store.getState().sidebarPanels.aiSearch,
+      );
+    });
+
+    it('persists when aiSearchNegativeExamples changes after init', () => {
+      fakeLocalStorage.getObject.returns(null);
+      createService().init();
+
+      const neg = [
+        {
+          id: 'n1',
+          schemaTag: 't',
+          query: 'q',
+          quote: 'qt',
+          documentUri: 'http://d',
+        },
+      ];
+      store.hydrateAISearchNegativeExamples(neg);
+
+      assert.calledWith(
+        fakeLocalStorage.setObject,
+        AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
+        neg,
       );
     });
 
@@ -158,6 +231,32 @@ describe('PersistedAISearchService', () => {
       );
 
       assert.deepEqual(store.getState().sidebarPanels.aiSearch, next);
+    });
+
+    it('hydrates negative examples from storage event payload', () => {
+      fakeLocalStorage.getObject.returns(null);
+
+      createService().init();
+
+      const next = [
+        {
+          id: 'n1',
+          schemaTag: 'remote',
+          query: 'rq',
+          quote: 'qx',
+          documentUri: 'http://r',
+        },
+      ];
+
+      triggerStorage(
+        AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
+        JSON.stringify(next),
+      );
+
+      assert.deepEqual(
+        store.getState().sidebarPanels.aiSearchNegativeExamples,
+        next,
+      );
     });
 
     it('does not hydrate when payload matches current state', () => {

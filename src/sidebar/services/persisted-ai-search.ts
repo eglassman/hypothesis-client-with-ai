@@ -1,10 +1,17 @@
 import type { SidebarStore } from '../store';
-import type { AISearchState } from '../store/modules/sidebar-panels';
+import type {
+  AISearchNegativeExample,
+  AISearchState,
+} from '../store/modules/sidebar-panels';
 import { watch } from '../util/watch';
 import type { LocalStorageService } from './local-storage';
 
 /** `localStorage` key for persisted AI search rows and tag colors. */
 export const AI_SEARCH_STORAGE_KEY = 'hypothesis.aiSearch.history';
+
+/** `localStorage` key for locally stored declined ai-pending snapshots. */
+export const AI_SEARCH_NEGATIVE_EXAMPLES_KEY =
+  'hypothesis.aiSearch.negativeExamples';
 
 const emptyAiSearch = (): AISearchState => ({
   rows: [],
@@ -68,9 +75,60 @@ export function parseAISearchState(raw: unknown): AISearchState | null {
 }
 
 /**
- * Persists `sidebarPanels.aiSearch` to `localStorage`, restores it on load, and
- * applies updates from other browser tabs via the `storage` event (see
- * `AuthService` for the same pattern for OAuth tokens).
+ * Validate and return persisted negative examples from parsed JSON, or `null`
+ * if invalid.
+ */
+export function parseAISearchNegativeExamplesState(
+  raw: unknown,
+): AISearchNegativeExample[] | null {
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const out: AISearchNegativeExample[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+    const r = item as Record<string, unknown>;
+    if (typeof r.id !== 'string') {
+      return null;
+    }
+    if (typeof r.schemaTag !== 'string') {
+      return null;
+    }
+    if (typeof r.query !== 'string') {
+      return null;
+    }
+    if (typeof r.quote !== 'string') {
+      return null;
+    }
+    if (typeof r.documentUri !== 'string') {
+      return null;
+    }
+    out.push({
+      id: r.id,
+      schemaTag: r.schemaTag,
+      query: r.query,
+      quote: r.quote,
+      documentUri: r.documentUri,
+    });
+  }
+  return out;
+}
+
+type StorageSyncConfig<T> = {
+  storageKey: string;
+  parse: (raw: unknown) => T | null;
+  empty: () => T;
+  getCurrent: () => T;
+  hydrate: (value: T) => void;
+};
+
+/**
+ * Persists `sidebarPanels.aiSearch` and `sidebarPanels.aiSearchNegativeExamples`
+ * to `localStorage`, restores on load, and applies updates from other browser
+ * tabs via the `storage` event (see `AuthService` for the same pattern for
+ * OAuth tokens).
  *
  * @inject
  */
@@ -89,11 +147,62 @@ export class PersistedAISearchService {
     this._window = $window;
   }
 
+  private _syncFromLocalStorage<T>(
+    config: StorageSyncConfig<T>,
+    e?: StorageEvent,
+  ) {
+    const { storageKey, parse, empty, getCurrent, hydrate } = config;
+    let raw: unknown;
+
+    if (e) {
+      if (e.key !== null && e.key !== storageKey) {
+        return;
+      }
+      if (e.key === storageKey && e.newValue !== null) {
+        try {
+          raw = JSON.parse(e.newValue);
+        } catch {
+          return;
+        }
+      } else if (e.key === storageKey && e.newValue === null) {
+        raw = null;
+      } else {
+        raw = this._storage.getObject<unknown>(storageKey);
+      }
+    } else {
+      raw = this._storage.getObject<unknown>(storageKey);
+    }
+
+    if (raw === null) {
+      const emp = empty();
+      if (JSON.stringify(emp) !== JSON.stringify(getCurrent())) {
+        hydrate(emp);
+      }
+      return;
+    }
+    const next = parse(raw);
+    if (!next) {
+      return;
+    }
+    if (JSON.stringify(next) === JSON.stringify(getCurrent())) {
+      return;
+    }
+    hydrate(next);
+  }
+
   init() {
     const persisted = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
     const parsed = parseAISearchState(persisted);
     if (parsed) {
       this._store.hydrateAISearch(parsed);
+    }
+
+    const negRaw = this._storage.getObject<unknown>(
+      AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
+    );
+    const negParsed = parseAISearchNegativeExamplesState(negRaw);
+    if (negParsed) {
+      this._store.hydrateAISearchNegativeExamples(negParsed);
     }
 
     watch(
@@ -105,68 +214,55 @@ export class PersistedAISearchService {
       (a, b) => JSON.stringify(a) === JSON.stringify(b),
     );
 
-    /**
-     * Apply persisted state from storage into Redux when it differs from the
-     * current slice.
-     *
-     * For `storage` events, prefer `event.newValue` so we apply exactly what
-     * changed (matches browser behavior; tests' fake storage does not update on
-     * events). For `visibilitychange` / `focus`, re-read via `getObject`.
-     */
-    const syncFromLocalStorage = (e?: StorageEvent) => {
-      let raw: unknown;
+    watch(
+      this._store.subscribe,
+      () => this._store.getState().sidebarPanels.aiSearchNegativeExamples,
+      current => {
+        this._storage.setObject(AI_SEARCH_NEGATIVE_EXAMPLES_KEY, current);
+      },
+      (a, b) => JSON.stringify(a) === JSON.stringify(b),
+    );
 
-      if (e) {
-        // Ignore updates to other keys; `key === null` means storage was cleared.
-        if (e.key !== null && e.key !== AI_SEARCH_STORAGE_KEY) {
-          return;
-        }
-        if (e.key === AI_SEARCH_STORAGE_KEY && e.newValue !== null) {
-          try {
-            raw = JSON.parse(e.newValue);
-          } catch {
-            return;
-          }
-        } else if (e.key === AI_SEARCH_STORAGE_KEY && e.newValue === null) {
-          raw = null;
-        } else {
-          raw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
-        }
-      } else {
-        raw = this._storage.getObject<unknown>(AI_SEARCH_STORAGE_KEY);
-      }
+    const syncHistory = (e?: StorageEvent) =>
+      this._syncFromLocalStorage(
+        {
+          storageKey: AI_SEARCH_STORAGE_KEY,
+          parse: parseAISearchState,
+          empty: emptyAiSearch,
+          getCurrent: () => this._store.getState().sidebarPanels.aiSearch,
+          hydrate: v => this._store.hydrateAISearch(v),
+        },
+        e,
+      );
 
-      if (raw === null) {
-        const empty = emptyAiSearch();
-        const current = this._store.getState().sidebarPanels.aiSearch;
-        if (JSON.stringify(empty) !== JSON.stringify(current)) {
-          this._store.hydrateAISearch(empty);
-        }
-        return;
-      }
-      const next = parseAISearchState(raw);
-      if (!next) {
-        return;
-      }
-      const current = this._store.getState().sidebarPanels.aiSearch;
-      if (JSON.stringify(next) === JSON.stringify(current)) {
-        return;
-      }
-      this._store.hydrateAISearch(next);
-    };
+    const syncNegatives = (e?: StorageEvent) =>
+      this._syncFromLocalStorage(
+        {
+          storageKey: AI_SEARCH_NEGATIVE_EXAMPLES_KEY,
+          parse: parseAISearchNegativeExamplesState,
+          empty: () => [],
+          getCurrent: () =>
+            this._store.getState().sidebarPanels.aiSearchNegativeExamples,
+          hydrate: v => this._store.hydrateAISearchNegativeExamples(v),
+        },
+        e,
+      );
 
     this._window.addEventListener('storage', (e: StorageEvent) => {
-      syncFromLocalStorage(e);
+      syncHistory(e);
+      syncNegatives(e);
     });
 
     this._window.document.addEventListener('visibilitychange', () => {
       if (this._window.document.visibilityState === 'visible') {
-        syncFromLocalStorage();
+        syncHistory();
+        syncNegatives();
       }
     });
 
     this._window.addEventListener('focus', () => {
-      syncFromLocalStorage();
+      syncHistory();
+      syncNegatives();
     });
   }
 }
