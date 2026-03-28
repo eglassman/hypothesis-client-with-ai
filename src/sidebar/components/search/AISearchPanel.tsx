@@ -744,14 +744,34 @@ function AISearchPanel({
             )}
           </div>
           <FilterControls />
-          <button
-            type="button"
-            className="mt-2 text-xs text-color-text-light hover:text-color-text underline"
-            title="Download experiment log as JSON"
-            onClick={() => experimentLog.downloadLog()}
-          >
-            Download experiment log
-          </button>
+          <div className="mt-2 flex gap-x-3">
+            <button
+              type="button"
+              className="text-xs text-color-text-light hover:text-color-text underline"
+              title="Download experiment log as JSON"
+              onClick={() => experimentLog.downloadLog()}
+            >
+              Download experiment log
+            </button>
+            <button
+              type="button"
+              className="text-xs text-color-text-light hover:text-color-text underline"
+              title="Clear experiment log"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Clear experiment log?',
+                  message:
+                    'This will permanently delete the experiment log. This cannot be undone.',
+                  confirmAction: 'Clear log',
+                });
+                if (ok) {
+                  experimentLog.clearLog();
+                }
+              }}
+            >
+              Clear log
+            </button>
+          </div>
         </CardContent>
       </Card>
     </SidebarPanel>

@@ -341,6 +341,10 @@ export class ExperimentLogService {
   // Export
   // -------------------------------------------------------------------------
 
+  clearLog(): void {
+    this._save({ version: 1, users: {} });
+  }
+
   getLog(): ExperimentLog {
     return this._load();
   }
