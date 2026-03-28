@@ -67,7 +67,7 @@ def inspect(log: dict):
         # Event counts by type.
         event_counts = Counter(e["type"] for e in events)
         print_subsection("Event counts")
-        for event_type in ["search", "rerun-search", "accept", "reject", "delete-search"]:
+        for event_type in ["search", "rerun-search", "accept", "reject", "delete-pending", "delete-all"]:
             print(f"    {event_type:20s} {event_counts.get(event_type, 0)}")
         print(f"    {'TOTAL':20s} {len(events)}")
 
@@ -127,11 +127,18 @@ def inspect(log: dict):
                 quote = e.get("quoteText", "")
                 quote_short = (quote[:40] + "...") if len(quote) > 40 else quote
                 detail = f'ann={e.get("annotationId", "?")} quote="{quote_short}"'
-            elif etype == "delete-search":
+            elif etype == "delete-pending":
                 detail = (
                     f'tag="{e.get("schemaTag", "")}" '
                     f'query="{e.get("query", "")[:50]}" '
-                    f'annotations={len(e.get("annotationIds", []))}'
+                    f'deleted={len(e.get("deletedAnnotationIds", []))}'
+                )
+            elif etype == "delete-all":
+                detail = (
+                    f'tag="{e.get("schemaTag", "")}" '
+                    f'query="{e.get("query", "")[:50]}" '
+                    f'deleted={len(e.get("deletedAnnotationIds", []))} '
+                    f'untagged={len(e.get("untaggedAnnotationIds", []))}'
                 )
             else:
                 detail = ""

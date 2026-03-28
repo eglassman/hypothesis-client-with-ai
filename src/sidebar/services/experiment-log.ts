@@ -46,14 +46,25 @@ export type ExperimentEvent =
       deletedAnnotationIds: string[];
     }
   | {
-      type: 'delete-search';
+      type: 'delete-pending';
       timestamp: string;
       username: string;
       documentUri: string;
       searchRowId: string;
       query: string;
       schemaTag: string;
-      annotationIds: string[];
+      deletedAnnotationIds: string[];
+    }
+  | {
+      type: 'delete-all';
+      timestamp: string;
+      username: string;
+      documentUri: string;
+      searchRowId: string;
+      query: string;
+      schemaTag: string;
+      deletedAnnotationIds: string[];
+      untaggedAnnotationIds: string[];
     };
 
 export type AnnotationStatus = {
@@ -274,26 +285,53 @@ export class ExperimentLogService {
     this._save(log);
   }
 
-  logDeleteSearch(params: {
+  logDeletePending(params: {
     searchRowId: string;
     query: string;
     schemaTag: string;
     documentUri: string;
-    annotationIds: string[];
+    deletedAnnotationIds: string[];
   }): void {
     const log = this._load();
     const user = this._username();
     const userLog = this._ensureUser(log, user);
 
     userLog.events.push({
-      type: 'delete-search',
+      type: 'delete-pending',
       timestamp: this._now(),
       username: user,
       documentUri: params.documentUri,
       searchRowId: params.searchRowId,
       query: params.query,
       schemaTag: params.schemaTag,
-      annotationIds: params.annotationIds,
+      deletedAnnotationIds: params.deletedAnnotationIds,
+    });
+
+    this._save(log);
+  }
+
+  logDeleteAll(params: {
+    searchRowId: string;
+    query: string;
+    schemaTag: string;
+    documentUri: string;
+    deletedAnnotationIds: string[];
+    untaggedAnnotationIds: string[];
+  }): void {
+    const log = this._load();
+    const user = this._username();
+    const userLog = this._ensureUser(log, user);
+
+    userLog.events.push({
+      type: 'delete-all',
+      timestamp: this._now(),
+      username: user,
+      documentUri: params.documentUri,
+      searchRowId: params.searchRowId,
+      query: params.query,
+      schemaTag: params.schemaTag,
+      deletedAnnotationIds: params.deletedAnnotationIds,
+      untaggedAnnotationIds: params.untaggedAnnotationIds,
     });
 
     this._save(log);

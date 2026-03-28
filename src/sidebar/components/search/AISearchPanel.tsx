@@ -279,13 +279,6 @@ function AISearchPanel({
     }
 
     setDeletingRowId(row.id);
-    experimentLog.logDeleteSearch({
-      searchRowId: row.id,
-      query: row.query,
-      schemaTag: row.schemaTag,
-      documentUri: documentURL ?? '',
-      annotationIds: row.annotationIds,
-    });
     try {
       const pending = listStrictAISearchRowPendingAnnotations(
         savedAnnotations as SavedAnnotation[],
@@ -307,6 +300,13 @@ function AISearchPanel({
           { visuallyHidden: true },
         );
       }
+      experimentLog.logDeletePending({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+      });
     } catch (err) {
       console.error(err);
       toastMessenger.error('Failed to delete pending annotations.');
@@ -341,6 +341,8 @@ function AISearchPanel({
       );
       const schemaTrim = row.schemaTag.trim();
       const touchedIds: string[] = [];
+      const deletedIds: string[] = [];
+      const untaggedIds: string[] = [];
 
       for (const ann of matches) {
         if (!ann.id) {
@@ -360,9 +362,11 @@ function AISearchPanel({
           }
           store.addAnnotations([updated]);
           touchedIds.push(ann.id);
+          untaggedIds.push(ann.id);
         } else {
           await annotationsService.delete(ann as SavedAnnotation);
           touchedIds.push(ann.id);
+          deletedIds.push(ann.id);
         }
       }
 
@@ -370,6 +374,16 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(touchedIds);
       }
       store.removeAISearchRow(row.id);
+
+      experimentLog.logDeleteAll({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+        untaggedAnnotationIds: untaggedIds,
+      });
+
       toastMessenger.success('AI search row removed.', { visuallyHidden: true });
     } catch (err) {
       console.error(err);
