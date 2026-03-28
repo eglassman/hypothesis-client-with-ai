@@ -2,10 +2,12 @@ import {
   CancelIcon,
   Card,
   CardContent,
+  confirm,
   Input,
   MenuCollapseIcon,
   MenuExpandIcon,
   RedoIcon,
+  TrashIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import { useRef, useState } from 'preact/hooks';
@@ -20,7 +22,14 @@ import {
   buildClaudeAISearchUserMessage,
   collectTagQueryQuoteRows,
   countAiSearchQuotesSkippedAsDuplicates,
+  countAISearchRowPendingAnnotations,
+  countAISearchRowTotalAnnotations,
+  deleteAllActionForAISearchRowMatch,
+  expectedTagsForStrictAISearchPending,
   filterAiSearchQuotesAgainstExisting,
+  listSavedAnnotationsMatchingAISearchRow,
+  listStrictAISearchRowPendingAnnotations,
+  tagsAfterRemovingAISearchRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
@@ -42,39 +51,6 @@ import type {
 import SidebarPanel from '../SidebarPanel';
 import FilterControls from './FilterControls';
 import SearchField from './SearchField';
-
-const AI_PENDING = 'ai-pending';
-
-function expectedTagsForAISearch(schemaTagTrimmed: string): string[] {
-  return schemaTagTrimmed ? [AI_PENDING, schemaTagTrimmed] : [AI_PENDING];
-}
-
-function tagsMatchAISearchPending(
-  tags: string[] | undefined,
-  schemaTagTrimmed: string,
-): boolean {
-  const expected = expectedTagsForAISearch(schemaTagTrimmed);
-  const t = tags ?? [];
-  if (t.length !== expected.length) {
-    return false;
-  }
-  return expected.every((x, i) => t[i] === x);
-}
-
-function isPendingAISearchAnnotation(
-  ann: SavedAnnotation,
-  documentURL: string,
-  queryTrimmed: string,
-  schemaTagTrimmed: string,
-): boolean {
-  if (ann.uri !== documentURL) {
-    return false;
-  }
-  if (!tagsMatchAISearchPending(ann.tags, schemaTagTrimmed)) {
-    return false;
-  }
-  return (ann.text ?? '').trim() === queryTrimmed;
-}
 
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
@@ -107,6 +83,7 @@ function AISearchPanel({
   const [userDeniedSectionOpen, setUserDeniedSectionOpen] = useState(false);
 
   const aiRows = store.aiSearchRows();
+  const savedAnnotations = store.savedAnnotations();
   const schemaTagColors = store.aiSearchSchemaTagColors();
   const documentURL = claude.firstPDFURI(store.searchUris());
   const negativeExamplesForDoc: AISearchNegativeExample[] = documentURL
@@ -167,7 +144,7 @@ function AISearchPanel({
         quotes,
       );
 
-      const tags = ['ai-pending', ...(tagTrim ? [tagTrim] : [])];
+      const tags = expectedTagsForStrictAISearchPending(tagTrim);
 
       const created = [];
       for (const quote of quotes) {
@@ -233,8 +210,17 @@ function AISearchPanel({
     }
   }
 
-  function onAISearch(query: string) {
-    return runAISearch(schemaTag, query);
+  async function onAISearch(query: string) {
+    const tagKey = schemaTag.trim();
+    const queryKey = query.trim();
+    const matchingRow = aiRows.find(
+      r => r.schemaTag.trim() === tagKey && r.query.trim() === queryKey,
+    );
+    if (matchingRow) {
+      await onRerunRow(matchingRow);
+    } else {
+      await runAISearch(schemaTag, query);
+    }
   }
 
   async function onRerunRow(row: AISearchRow) {
@@ -251,19 +237,12 @@ function AISearchPanel({
     try {
       store.mergeAISearchRowsWithSameTagQuery(row.id);
 
-      const schemaTagTrim = row.schemaTag.trim();
-      const queryTrim = row.query.trim();
-
-      const pending = store
-        .savedAnnotations()
-        .filter(ann =>
-          isPendingAISearchAnnotation(
-            ann as SavedAnnotation,
-            documentURL,
-            queryTrim,
-            schemaTagTrim,
-          ),
-        ) as SavedAnnotation[];
+      const pending = listStrictAISearchRowPendingAnnotations(
+        store.savedAnnotations() as SavedAnnotation[],
+        documentURL,
+        row.schemaTag,
+        row.query,
+      );
 
       const deletedIds: string[] = [];
       for (const ann of pending) {
@@ -293,7 +272,12 @@ function AISearchPanel({
     }
   }
 
-  async function onDeleteRow(row: AISearchRow) {
+  async function onDeletePending(row: AISearchRow) {
+    if (!documentURL) {
+      toastMessenger.error('Missing PDF URL');
+      return;
+    }
+
     setDeletingRowId(row.id);
     experimentLog.logDeleteSearch({
       searchRowId: row.id,
@@ -303,16 +287,93 @@ function AISearchPanel({
       annotationIds: row.annotationIds,
     });
     try {
-      for (const id of row.annotationIds) {
-        const ann = store.findAnnotationByID(id);
-        if (ann?.id) {
+      const pending = listStrictAISearchRowPendingAnnotations(
+        savedAnnotations as SavedAnnotation[],
+        documentURL,
+        row.schemaTag,
+        row.query,
+      );
+      const deletedIds: string[] = [];
+      for (const ann of pending) {
+        if (ann.id) {
           await annotationsService.delete(ann as SavedAnnotation);
+          deletedIds.push(ann.id);
         }
       }
-      store.removeAISearchRow(row.id);
+      if (deletedIds.length) {
+        store.removeAnnotationIdsFromAISearchRows(deletedIds);
+        toastMessenger.success(
+          `Deleted ${deletedIds.length} pending annotation(s).`,
+          { visuallyHidden: true },
+        );
+      }
     } catch (err) {
       console.error(err);
-      toastMessenger.error('Failed to remove one or more annotations.');
+      toastMessenger.error('Failed to delete pending annotations.');
+    } finally {
+      setDeletingRowId(null);
+    }
+  }
+
+  async function onDeleteAll(row: AISearchRow) {
+    if (!documentURL) {
+      toastMessenger.error('Missing PDF URL');
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: 'Delete all for this tag and query?',
+      message:
+        'This removes this row’s schema tag from annotations that still have other tags, or fully deletes annotations that only have this tag (plus ai-pending / ai-user-approved). For rows with no schema tag, matching annotations are deleted entirely. This affects pending, user-approved, and other matching annotations on this document.',
+      confirmAction: 'Delete all',
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingRowId(row.id);
+    try {
+      const matches = listSavedAnnotationsMatchingAISearchRow(
+        savedAnnotations as SavedAnnotation[],
+        documentURL,
+        row.schemaTag,
+        row.query,
+      );
+      const schemaTrim = row.schemaTag.trim();
+      const touchedIds: string[] = [];
+
+      for (const ann of matches) {
+        if (!ann.id) {
+          continue;
+        }
+        const action = deleteAllActionForAISearchRowMatch(ann, schemaTrim);
+        if (action === 'removeRowTag') {
+          const newTags = tagsAfterRemovingAISearchRowSchemaTag(
+            ann.tags,
+            schemaTrim,
+          );
+          let updated = await api.annotation.update({ id: ann.id }, { tags: newTags });
+          for (const [key, value] of Object.entries(ann)) {
+            if (key.startsWith('$')) {
+              updated = { ...updated, [key]: value };
+            }
+          }
+          store.addAnnotations([updated]);
+          touchedIds.push(ann.id);
+        } else {
+          await annotationsService.delete(ann as SavedAnnotation);
+          touchedIds.push(ann.id);
+        }
+      }
+
+      if (touchedIds.length) {
+        store.removeAnnotationIdsFromAISearchRows(touchedIds);
+      }
+      store.removeAISearchRow(row.id);
+      toastMessenger.success('AI search row removed.', { visuallyHidden: true });
+    } catch (err) {
+      console.error(err);
+      toastMessenger.error('Failed to complete delete all.');
     } finally {
       setDeletingRowId(null);
     }
@@ -406,13 +467,24 @@ function AISearchPanel({
                         Query
                       </th>
                       <th
-                        className="py-1 pr-2 text-right font-normal w-10"
+                        className="py-1 pr-2 text-right font-normal tabular-nums"
                         scope="col"
+                        title="AI-generated pending annotations"
                       >
-                        #
+                        Pending
+                      </th>
+                      <th
+                        className="py-1 pr-2 text-right font-normal tabular-nums"
+                        scope="col"
+                        title="All annotations matching this tag and query"
+                      >
+                        Total
                       </th>
                       <th className="py-1 w-10" scope="col">
-                        <span className="sr-only">Remove</span>
+                        <span className="sr-only">Delete pending</span>
+                      </th>
+                      <th className="py-1 w-10" scope="col">
+                        <span className="sr-only">Delete all</span>
                       </th>
                     </tr>
                   </thead>
@@ -421,6 +493,22 @@ function AISearchPanel({
                       const tagKey = row.schemaTag.trim();
                       const rgba = colorForRow(row);
                       const hex = rgbaStringToHexColorInput(rgba);
+                      const pendingCount = documentURL
+                        ? countAISearchRowPendingAnnotations(
+                            savedAnnotations,
+                            documentURL,
+                            row.schemaTag,
+                            row.query,
+                          )
+                        : 0;
+                      const totalCount = documentURL
+                        ? countAISearchRowTotalAnnotations(
+                            savedAnnotations,
+                            documentURL,
+                            row.schemaTag,
+                            row.query,
+                          )
+                        : 0;
                       return (
                         <tr
                           key={row.id}
@@ -480,7 +568,24 @@ function AISearchPanel({
                             {row.query}
                           </td>
                           <td className="py-1 pr-2 text-right align-middle tabular-nums">
-                            {row.annotationIds.length}
+                            {documentURL
+                              ? countAISearchRowPendingAnnotations(
+                                  savedAnnotations,
+                                  documentURL,
+                                  row.schemaTag,
+                                  row.query,
+                                )
+                              : 0}
+                          </td>
+                          <td className="py-1 pr-2 text-right align-middle tabular-nums">
+                            {documentURL
+                              ? countAISearchRowTotalAnnotations(
+                                  savedAnnotations,
+                                  documentURL,
+                                  row.schemaTag,
+                                  row.query,
+                                )
+                              : 0}
                           </td>
                           <td className="py-1 align-middle">
                             <button
@@ -491,14 +596,40 @@ function AISearchPanel({
                               )}
                               disabled={
                                 deletingRowId === row.id ||
-                                rerunningRowId === row.id
+                                rerunningRowId === row.id ||
+                                !documentURL ||
+                                pendingCount === 0
                               }
-                              title="Remove row and delete matching annotations"
-                              onClick={() => onDeleteRow(row)}
+                              title="Delete pending AI annotations for this tag and query"
+                              aria-label="Delete pending"
+                              onClick={() => onDeletePending(row)}
                             >
                               <CancelIcon
                                 className="w-em h-em"
-                                title="Remove"
+                                title="Delete pending"
+                              />
+                            </button>
+                          </td>
+                          <td className="py-1 align-middle">
+                            <button
+                              type="button"
+                              className={classnames(
+                                'p-1 rounded text-grey-6 hover:text-color-text hover:bg-grey-2',
+                                'transition-colors duration-200 focus-visible-ring',
+                              )}
+                              disabled={
+                                deletingRowId === row.id ||
+                                rerunningRowId === row.id ||
+                                !documentURL ||
+                                totalCount === 0
+                              }
+                              title="Delete all matching annotations for this tag and query"
+                              aria-label="Delete all"
+                              onClick={() => onDeleteAll(row)}
+                            >
+                              <TrashIcon
+                                className="w-em h-em"
+                                title="Delete all"
                               />
                             </button>
                           </td>
@@ -509,7 +640,11 @@ function AISearchPanel({
                 </table>
                 <p className="text-color-text-light text-xs leading-snug">
                   Highlight color is per tag; rows that share a tag share this
-                  color.
+                  color. Pending counts strict ai-pending annotations for this tag
+                  and query; Total includes approved, pending, and manual
+                  annotations with the same tag and query on this document. Delete
+                  all removes this row’s tag or deletes annotations when it is the
+                  only content tag (see confirmation).
                 </p>
               </div>
             )}

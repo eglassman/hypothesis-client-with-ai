@@ -23,7 +23,7 @@ export type SearchFieldProps = {
   disabled?: boolean;
 
   /** Callback for when the current filter query changes */
-  onSearch: (value: string) => void;
+  onSearch: (value: string) => void | Promise<void>;
 
   /** Callback for when a key is pressed in the input itself */
   onKeyDown?: JSX.KeyboardEventHandler<HTMLInputElement>;

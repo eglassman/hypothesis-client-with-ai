@@ -233,9 +233,14 @@ export async function collectTagQueryQuoteRows(
 
 /**
  * Tags other than ai-pending / ai-user-approved (schema and user tags).
+ * Exported for AI search delete-all (content-tag count) and tests.
  */
-function contentTags(tags: string[]): string[] {
+export function aiSearchContentTags(tags: string[]): string[] {
   return tags.filter(t => t !== AI_USER_APPROVED && t !== AI_PENDING);
+}
+
+function contentTags(tags: string[]): string[] {
+  return aiSearchContentTags(tags);
 }
 
 /**
@@ -318,6 +323,173 @@ export function countAiSearchQuotesSkippedAsDuplicates(
   const nonEmptyRaw = raw.filter(q => q.text?.trim()).length;
   const nonEmptyFiltered = filtered.filter(q => q.text?.trim()).length;
   return nonEmptyRaw - nonEmptyFiltered;
+}
+
+/**
+ * True if a saved annotation belongs to an AI search history row: same document,
+ * body text equals the row query (trimmed), schema tag matches, not a reply.
+ * Includes ai-pending, ai-user-approved, and manually authored rows with that tag+query.
+ */
+export function savedAnnotationMatchesAISearchRow(
+  ann: SavedAnnotation,
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): boolean {
+  if (!isSaved(ann) || ann.uri !== documentUri) {
+    return false;
+  }
+  if (isReply(ann)) {
+    return false;
+  }
+  const queryTrim = norm(query);
+  if (norm(ann.text ?? '') !== queryTrim) {
+    return false;
+  }
+  return schemaTagMatchesSearchRow(norm(schemaTag), ann.tags ?? []);
+}
+
+/**
+ * Expected tag list for AI-created pending annotations (strict match for rerun / delete pending).
+ */
+export function expectedTagsForStrictAISearchPending(
+  schemaTagTrimmed: string,
+): string[] {
+  return schemaTagTrimmed ? [AI_PENDING, schemaTagTrimmed] : [AI_PENDING];
+}
+
+/**
+ * True if tags are exactly `['ai-pending']` or `['ai-pending', schemaTag]` in order.
+ */
+export function tagsMatchStrictAISearchPending(
+  tags: string[] | undefined,
+  schemaTagTrimmed: string,
+): boolean {
+  const expected = expectedTagsForStrictAISearchPending(schemaTagTrimmed);
+  const t = tags ?? [];
+  if (t.length !== expected.length) {
+    return false;
+  }
+  return expected.every((x, i) => t[i] === x);
+}
+
+/**
+ * Strict AI pending: same document, query text, and exact pending tag shape as rerun.
+ */
+export function savedAnnotationIsStrictAISearchPending(
+  ann: SavedAnnotation,
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): boolean {
+  if (!isSaved(ann) || ann.uri !== documentUri) {
+    return false;
+  }
+  const schemaTagTrim = norm(schemaTag);
+  if (!tagsMatchStrictAISearchPending(ann.tags, schemaTagTrim)) {
+    return false;
+  }
+  return norm(ann.text ?? '') === norm(query);
+}
+
+/**
+ * Count of strict pending annotations for this row (matches delete pending / rerun).
+ */
+export function countAISearchRowPendingAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): number {
+  return countIf(annotations, ann =>
+    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+  );
+}
+
+/**
+ * All saved annotations matching this row's Total (tag + query + document).
+ */
+export function listSavedAnnotationsMatchingAISearchRow(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): SavedAnnotation[] {
+  return annotations.filter(ann =>
+    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+  );
+}
+
+/**
+ * Strict pending list for delete pending / rerun.
+ */
+export function listStrictAISearchRowPendingAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): SavedAnnotation[] {
+  return annotations.filter(ann =>
+    savedAnnotationIsStrictAISearchPending(ann, documentUri, schemaTag, query),
+  );
+}
+
+export type AISearchDeleteAllAction = 'removeRowTag' | 'deleteAnnotation';
+
+/**
+ * For an annotation that matches this row's Total, choose PATCH (remove schema tag) vs full delete.
+ * Empty-schema rows always delete (no tag to strip).
+ */
+export function deleteAllActionForAISearchRowMatch(
+  ann: SavedAnnotation,
+  rowSchemaTagTrimmed: string,
+): AISearchDeleteAllAction {
+  if (!norm(rowSchemaTagTrimmed)) {
+    return 'deleteAnnotation';
+  }
+  const ct = aiSearchContentTags(ann.tags ?? []);
+  if (ct.length > 1) {
+    return 'removeRowTag';
+  }
+  return 'deleteAnnotation';
+}
+
+/**
+ * Tags after removing this row's schema tag (for PATCH). Removes all occurrences of `tagToRemove`.
+ */
+export function tagsAfterRemovingAISearchRowSchemaTag(
+  tags: string[] | undefined,
+  schemaTagTrimmed: string,
+): string[] {
+  const t = norm(schemaTagTrimmed);
+  if (!t) {
+    return tags ?? [];
+  }
+  return (tags ?? []).filter(tag => tag !== t);
+}
+
+/**
+ * Total annotations for this row: pending, user-approved, or manual, matching tag+query.
+ */
+export function countAISearchRowTotalAnnotations(
+  annotations: SavedAnnotation[],
+  documentUri: string,
+  schemaTag: string,
+  query: string,
+): number {
+  return countIf(annotations, ann =>
+    savedAnnotationMatchesAISearchRow(ann, documentUri, schemaTag, query),
+  );
+}
+
+function countIf<T>(items: T[], pred: (item: T) => boolean): number {
+  let n = 0;
+  for (const item of items) {
+    if (pred(item)) {
+      n++;
+    }
+  }
+  return n;
 }
 
 const EXAMPLES_HEADER =
