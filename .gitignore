@@ -30,6 +30,3 @@ yalc.lock
 
 # TypeScript cache
 *.tsbuildinfo
-
-# Local build instructions
-BUILD-INSTRUCTIONS.md
