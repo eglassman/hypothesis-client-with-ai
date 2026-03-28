@@ -34,6 +34,7 @@ import { PersistedDefaultsService } from './services/persisted-defaults';
 import { RouterService } from './services/router';
 // import { ReductoService } from './services/reducto';
 import { ClaudeService } from './services/claude';
+import { ExperimentLogService } from './services/experiment-log';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
@@ -182,6 +183,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('persistedAISearch', PersistedAISearchService)
 //    .register('reducto', ReductoService)
     .register('claude', ClaudeService)
+    .register('experimentLog', ExperimentLogService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
     .register('session', SessionService)

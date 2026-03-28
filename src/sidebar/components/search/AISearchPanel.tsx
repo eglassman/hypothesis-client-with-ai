@@ -34,12 +34,14 @@ import {
 import { mergeAISearchTagHighlightPalette } from '../../helpers/ai-search-tag-palette';
 import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
+import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
 import type { FrameSyncService } from '../../services/frame-sync';
 // import type { ReductoService } from '../../services/reducto';
 import type { ClaudeService } from '../../services/claude';
+import type { ExperimentLogService } from '../../services/experiment-log';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import type {
@@ -52,6 +54,7 @@ import SearchField from './SearchField';
 
 type AISearchPanelProps = {
   annotationsService: AnnotationsService;
+  experimentLog: ExperimentLogService;
   frameSync: FrameSyncService;
   // reducto: ReductoService;
   claude: ClaudeService;
@@ -61,6 +64,7 @@ type AISearchPanelProps = {
 
 function AISearchPanel({
   annotationsService,
+  experimentLog,
   frameSync,
   // reducto,
   claude,
@@ -174,17 +178,27 @@ function AISearchPanel({
         .map(a => a.id)
         .filter((id): id is string => typeof id === 'string');
 
+      const rowId = options?.replaceRowId ?? crypto.randomUUID();
       if (options?.replaceRowId) {
         store.setAISearchRowAnnotationIds(options.replaceRowId, newIds);
       } else {
         const row: AISearchRow = {
-          id: crypto.randomUUID(),
+          id: rowId,
           schemaTag: schemaTagForRow,
           query,
           annotationIds: newIds,
         };
         store.addAISearchRow(row);
       }
+
+      experimentLog.logSearch({
+        query,
+        schemaTag: schemaTagForRow,
+        searchRowId: rowId,
+        documentUri: documentURL,
+        annotationIdsCreated: newIds,
+        quoteTexts: created.map(a => annotationQuote(a) ?? ''),
+      });
 
       let successMsg = `Created ${created.length} annotation(s) from AI results.`;
       if (skippedDuplicate > 0) {
@@ -247,6 +261,14 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(deletedIds);
       }
 
+      experimentLog.logRerunSearch({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+      });
+
       await runAISearch(row.schemaTag, row.query, { replaceRowId: row.id });
     } catch (err) {
       console.error(err);
@@ -284,6 +306,13 @@ function AISearchPanel({
           { visuallyHidden: true },
         );
       }
+      experimentLog.logDeletePending({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+      });
     } catch (err) {
       console.error(err);
       toastMessenger.error('Failed to delete pending annotations.');
@@ -318,6 +347,8 @@ function AISearchPanel({
       );
       const schemaTrim = row.schemaTag.trim();
       const touchedIds: string[] = [];
+      const deletedIds: string[] = [];
+      const untaggedIds: string[] = [];
 
       for (const ann of matches) {
         if (!ann.id) {
@@ -337,9 +368,11 @@ function AISearchPanel({
           }
           store.addAnnotations([updated]);
           touchedIds.push(ann.id);
+          untaggedIds.push(ann.id);
         } else {
           await annotationsService.delete(ann as SavedAnnotation);
           touchedIds.push(ann.id);
+          deletedIds.push(ann.id);
         }
       }
 
@@ -347,6 +380,16 @@ function AISearchPanel({
         store.removeAnnotationIdsFromAISearchRows(touchedIds);
       }
       store.removeAISearchRow(row.id);
+
+      experimentLog.logDeleteAll({
+        searchRowId: row.id,
+        query: row.query,
+        schemaTag: row.schemaTag,
+        documentUri: documentURL,
+        deletedAnnotationIds: deletedIds,
+        untaggedAnnotationIds: untaggedIds,
+      });
+
       toastMessenger.success('AI search row removed.', { visuallyHidden: true });
     } catch (err) {
       console.error(err);
@@ -713,6 +756,34 @@ function AISearchPanel({
             )}
           </div>
           <FilterControls />
+          <div className="mt-2 flex gap-x-3">
+            <button
+              type="button"
+              className="text-xs text-color-text-light hover:text-color-text underline"
+              title="Download experiment log as JSON"
+              onClick={() => experimentLog.downloadLog()}
+            >
+              Download experiment log
+            </button>
+            <button
+              type="button"
+              className="text-xs text-color-text-light hover:text-color-text underline"
+              title="Clear experiment log"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Clear experiment log?',
+                  message:
+                    'This will permanently delete the experiment log. This cannot be undone.',
+                  confirmAction: 'Clear log',
+                });
+                if (ok) {
+                  experimentLog.clearLog();
+                }
+              }}
+            >
+              Clear log
+            </button>
+          </div>
         </CardContent>
       </Card>
     </SidebarPanel>
@@ -721,6 +792,7 @@ function AISearchPanel({
 
 export default withServices(AISearchPanel, [
   'annotationsService',
+  'experimentLog',
   'frameSync',
   // 'reducto',
   'claude',
