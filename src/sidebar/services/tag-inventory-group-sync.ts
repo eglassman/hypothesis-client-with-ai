@@ -1,10 +1,13 @@
 import type { Annotation, SavedAnnotation } from '../../types/api';
 import { isSaved } from '../helpers/annotation-metadata';
-import { currentDocumentUri, documentUriAliases, filterSavedAnnotationsForDocument, resolveDocumentUriFromCandidates } from '../helpers/document-uri';
 import {
-  deriveTagInventoryRowDescriptors,
-} from '../helpers/tag-inventory-group';
+  currentDocumentUri,
+  documentUriAliases,
+  filterSavedAnnotationsForDocument,
+  resolveDocumentUriFromCandidates,
+} from '../helpers/document-uri';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
 import type { SidebarStore } from '../store';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
@@ -39,11 +42,7 @@ export function savedAnnotationsForCurrentDocument(
   groupId: string,
   aliases: readonly string[],
 ): SavedAnnotation[] {
-  return filterSavedAnnotationsForDocument(
-    savedAnnotations,
-    groupId,
-    aliases,
-  );
+  return filterSavedAnnotationsForDocument(savedAnnotations, groupId, aliases);
 }
 
 /**
@@ -280,7 +279,9 @@ export class TagInventoryGroupSyncService {
    * Reconcile tag inventory rows from annotations already loaded for the
    * current document. No network requests.
    */
-  async applyStoreAnnotationsToInventory(options: SyncGroupInventoryOptions = {}) {
+  async applyStoreAnnotationsToInventory(
+    options: SyncGroupInventoryOptions = {},
+  ) {
     if (this._inventorySyncDeferDepth > 0) {
       return;
     }
@@ -294,8 +295,7 @@ export class TagInventoryGroupSyncService {
       return;
     }
 
-    const aliases =
-      options.documentUris ?? documentUriAliases(this._store);
+    const aliases = options.documentUris ?? documentUriAliases(this._store);
     this._syncing = true;
     this._syncOnStack = true;
 
@@ -307,10 +307,9 @@ export class TagInventoryGroupSyncService {
             groupId,
             aliases,
           );
-          const resolvedUri = resolveDocumentUriFromCandidates(
-            this._store,
-            [...aliases],
-          );
+          const resolvedUri = resolveDocumentUriFromCandidates(this._store, [
+            ...aliases,
+          ]);
           if (!resolvedUri) {
             return;
           }
@@ -357,10 +356,7 @@ export class TagInventoryGroupSyncService {
    * Upsert realtime updates into the private-group cache and drop deletions.
    * No-op when the cache has not been populated yet.
    */
-  mergePendingUpdatesIntoCache(
-    updates: Annotation[],
-    deletedIds: string[],
-  ) {
+  mergePendingUpdatesIntoCache(updates: Annotation[], deletedIds: string[]) {
     const groupId = this._store.focusedGroupId();
     if (!groupId || groupId === PUBLIC_GROUP_ID) {
       return;
@@ -394,10 +390,12 @@ export class TagInventoryGroupSyncService {
     annotations: SavedAnnotation[],
     options?: {
       documentUri?: string;
+      documentUriAliases?: readonly string[];
       idSourceAnnotations?: SavedAnnotation[];
     },
   ) {
-    const aliases = documentUriAliases(this._store);
+    const aliases =
+      options?.documentUriAliases ?? documentUriAliases(this._store);
     const documentUri =
       options?.documentUri ??
       resolveDocumentUriFromCandidates(this._store, [...aliases]) ??

@@ -1,11 +1,11 @@
 import sinon from 'sinon';
 
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 import {
   TagInventoryGroupSyncService,
   savedAnnotationsForCurrentDocument,
 } from '../tag-inventory-group-sync';
-import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 
 describe('TagInventoryGroupSyncService', () => {
   let fakeApi;
@@ -41,6 +41,7 @@ describe('TagInventoryGroupSyncService', () => {
       setTagInventoryRowAnnotationIds: sinon.stub(),
       tagInventoryRows: sinon.stub().returns([]),
       focusedGroupId: sinon.stub().returns('private-group'),
+      hasFetchedAnnotations: sinon.stub().returns(true),
       hasFetchedProfile: sinon.stub().returns(true),
       mainFrame: sinon.stub().returns({ uri: 'http://example.com' }),
       defaultContentFrame: sinon.stub().returns(null),
@@ -74,7 +75,12 @@ describe('TagInventoryGroupSyncService', () => {
 
     assert.notCalled(groupAnnotationsRead);
     assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: tagInventoryRowId('methods', '', PUBLIC_GROUP_ID, 'http://example.com'),
+      id: tagInventoryRowId(
+        'methods',
+        '',
+        PUBLIC_GROUP_ID,
+        'http://example.com',
+      ),
       groupId: PUBLIC_GROUP_ID,
       schemaTag: 'methods',
       query: '',
@@ -140,7 +146,7 @@ describe('TagInventoryGroupSyncService', () => {
     fakeStore.removeTagInventoryRow = sinon.stub();
     fakeStore.tagInventoryRows = sinon.stub().returns([]);
     fakeStore.mainFrame.returns({ uri: 'https://example.com/old.pdf' });
-    fakeStore.searchUris.returns(['https://example.com/new.pdf']);
+    fakeStore.searchUris.returns(['https://example.com/old.pdf']);
     fakeStore.savedAnnotations.returns([
       {
         id: 'a1',
@@ -154,6 +160,7 @@ describe('TagInventoryGroupSyncService', () => {
     fakeStore.addTagInventoryRow.resetHistory();
 
     fakeStore.mainFrame.returns({ uri: 'https://example.com/new.pdf' });
+    fakeStore.searchUris.returns(['https://example.com/new.pdf']);
     for (const cb of subscribeCallbacks) {
       cb();
     }
@@ -181,7 +188,7 @@ describe('TagInventoryGroupSyncService', () => {
     assert.calledWith(
       fakeStore.setTagInventoryRowAnnotationIds,
       tagInventoryRowId('methods', 'find it', 'private-group'),
-      [],
+      ['a1'],
     );
     assert.calledOnce(fakeStore.pruneTagInventoryRowsForGroup);
   });

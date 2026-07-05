@@ -2783,7 +2783,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@hypothesis/frontend-build@npm:^5.1.0":
+"@hypothesis/frontend-build@npm:5.1.0":
   version: 5.1.0
   resolution: "@hypothesis/frontend-build@npm:5.1.0"
   dependencies:
@@ -2807,6 +2807,33 @@ __metadata:
     tailwindcss:
       optional: true
   checksum: 38131aa73178f74a03689ca6eeb1307c835143cecb1e0c1632d8a6a10591bd46a153da87f37dd8b21d03eaf7ab0ec86b5898dc56fda4cb2034c8a8760baf760d
+  languageName: node
+  linkType: hard
+
+"@hypothesis/frontend-build@patch:@hypothesis/frontend-build@npm%3A5.1.0#./.yarn/patches/@hypothesis-frontend-build-npm-5.1.0-8ebc1687f9.patch::locator=hypothesis-with-ai%40workspace%3A.":
+  version: 5.1.0
+  resolution: "@hypothesis/frontend-build@patch:@hypothesis/frontend-build@npm%3A5.1.0#./.yarn/patches/@hypothesis-frontend-build-npm-5.1.0-8ebc1687f9.patch::version=5.1.0&hash=d28e62&locator=hypothesis-with-ai%40workspace%3A."
+  dependencies:
+    commander: ^14.0.0
+    fancy-log: ^2.0.0
+    glob: ^11.0.0
+  peerDependencies:
+    "@tailwindcss/postcss": ^4.1.13
+    postcss: ^8.3.9
+    rollup: ^4.0.2
+    sass: ^1.43.2
+    tailwindcss: ^3.0.11 || ^4.1.0
+    vitest: ^3.1.1 || ^4.0.1
+  peerDependenciesMeta:
+    "@tailwindcss/postcss":
+      optional: true
+    postcss:
+      optional: true
+    sass:
+      optional: true
+    tailwindcss:
+      optional: true
+  checksum: 8b48f29078c7bf3d636ce59f079e2c35cfb8019c42f354bd279a66cc5d280f8cdff5ab858db3b500c727d02fd79498f24315bbf41f2bd88bc606f97b33de5ebe
   languageName: node
   linkType: hard
 

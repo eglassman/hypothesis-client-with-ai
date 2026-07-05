@@ -1,8 +1,8 @@
 import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
+import { isReply, isSaved, quote } from './annotation-metadata';
 import { documentUriMatches } from './document-uri';
 import { negativeSchemaTags, positiveSchemaTags } from './tag-inventory-group';
-import { isReply, isSaved, quote } from './annotation-metadata';
 
 export type AiSearchQuoteItem = { text?: string };
 
@@ -217,25 +217,19 @@ export async function dedupeTagQueryRows(
 }
 
 /**
- * Collect, dedupe, and delete duplicate positive annotations. Times and logs construction.
+ * Collect and dedupe approved positive examples from saved annotations.
  */
 export async function collectPositiveExamplesFromAnnotations(
   annotations: SavedAnnotation[],
   annotationsService: AnnotationsService,
 ): Promise<FewShotExampleRow[]> {
-  const t0 = performance.now();
-  try {
-    const candidates = buildCandidateRows(annotations);
-    const deduped = await dedupeTagQueryRows(candidates, annotationsService);
-    return deduped.map(r => ({
-      tag: r.tag,
-      query: r.query,
-      quote: r.quote,
-    }));
-  } finally {
-    const elapsedMs = Math.round(performance.now() - t0);
-    console.log('[AISearch] positive examples construction', { elapsedMs });
-  }
+  const candidates = buildCandidateRows(annotations);
+  const deduped = await dedupeTagQueryRows(candidates, annotationsService);
+  return deduped.map(r => ({
+    tag: r.tag,
+    query: r.query,
+    quote: r.quote,
+  }));
 }
 
 /**
@@ -600,8 +594,7 @@ function countIf<T>(items: T[], pred: (item: T) => boolean): number {
   return n;
 }
 
-const EXAMPLES_HEADER =
-  'Examples of tag-query-quote triples:\n\n';
+const EXAMPLES_HEADER = 'Examples of tag-query-quote triples:\n\n';
 
 const NEGATIVE_EXAMPLES_HEADER =
   'Negative examples of tag-query-quote triples:\n\n';

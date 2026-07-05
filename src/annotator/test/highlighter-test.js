@@ -374,7 +374,9 @@ describe('annotator/highlighter', () => {
         const baseRect = page.querySelector(
           'rect.hypothesis-svg-highlight[data-has-tag-overlays]',
         );
-        const overlays = page.querySelectorAll('rect.hypothesis-svg-highlight-overlay');
+        const overlays = page.querySelectorAll(
+          'rect.hypothesis-svg-highlight-overlay',
+        );
 
         assert.ok(baseRect);
         assert.equal(overlays.length, 2);
@@ -666,23 +668,20 @@ describe('annotator/highlighter', () => {
       // Focus the first, outermost highlight
       hl.setHighlightsFocused(toFocus, true);
 
-      assert.equal(
-        svgEls().length,
-        4,
-        'cloned, focused highlight element added',
-      );
+      assert.equal(svgEls().length, 3, 'focus is applied in place');
 
       updateClusters(container);
 
       assert.deepEqual(
         orderedNestingLevels(),
-        [0, 1, 2, 0],
+        [1, 2, 0],
         'Focused highlight remains at end after re-ordering',
       );
 
       hl.setHighlightsFocused(toFocus, false);
+      updateClusters(container);
 
-      assert.equal(svgEls().length, 3, 'Cloned element removed when unfocused');
+      assert.equal(svgEls().length, 3, 'Unfocus preserves existing elements');
       assert.deepEqual(orderedNestingLevels(), [0, 1, 2]);
     });
   });
@@ -820,7 +819,10 @@ describe('annotator/highlighter', () => {
       const svgLayer = root.querySelector('svg');
 
       highlights[0].svgHighlight.setAttribute('data-focused-id', 'legacy');
-      highlights[0].svgHighlight.setAttribute('data-is-focused', 'data-is-focused');
+      highlights[0].svgHighlight.setAttribute(
+        'data-is-focused',
+        'data-is-focused',
+      );
 
       // Removing a highlight without unfocusing it first
       hl.removeHighlights([highlights[0]]);
@@ -915,10 +917,16 @@ describe('annotator/highlighter', () => {
       document.body.append(container);
 
       const textHighlight = document.createElement('hypothesis-highlight');
-      const svgLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const svgLayer = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'svg',
+      );
       svgLayer.setAttribute('class', 'hypothesis-highlight-layer');
 
-      const baseRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      const baseRect = document.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'rect',
+      );
       baseRect.setAttribute('class', 'hypothesis-svg-highlight');
       baseRect.setAttribute('data-highlight-id', 'h1');
       baseRect.getBoundingClientRect = () => ({

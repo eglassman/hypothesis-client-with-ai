@@ -128,7 +128,11 @@ export class Highlighter {
       // likelihood of highlights being hidden by page styling.
 
       const highlightEl = document.createElement('hypothesis-highlight');
-      highlightEl.className = classnames('hypothesis-highlight', cssClass, ...tagClasses);
+      highlightEl.className = classnames(
+        'hypothesis-highlight',
+        cssClass,
+        ...tagClasses,
+      );
 
       const parent = nodes[0].parentNode as ParentNode;
       parent.replaceChild(highlightEl, nodes[0]);
@@ -486,7 +490,9 @@ function associatedSVGHighlights(svgEl: SVGElement): SVGElement[] {
     return [svgEl];
   }
   return Array.from(
-    (svgEl.parentNode as Element).querySelectorAll(`[data-highlight-id="${id}"]`),
+    (svgEl.parentNode as Element).querySelectorAll(
+      `[data-highlight-id="${id}"]`,
+    ),
   ) as SVGElement[];
 }
 
@@ -585,12 +591,16 @@ export function getHighlightsFromPoint(
         svgHighlight &&
         associatedSVGHighlights(svgHighlight).some(svgRect => {
           const rect = svgRect.getBoundingClientRect();
-          return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+          return (
+            x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
+          );
         })
       );
     }) as HighlightElement[];
 
-  return Array.from(new Set([...textHighlights, ...shapeHighlights, ...svgHighlights]));
+  return Array.from(
+    new Set([...textHighlights, ...shapeHighlights, ...svgHighlights]),
+  );
 }
 
 // Subset of `DOMRect` interface
@@ -773,9 +783,6 @@ function updateSVGHighlightOrdering(element: Element) {
 
     if (!correctlyOrdered) {
       layerHighlights.sort((a, b) => nestingLevel(a) - nestingLevel(b));
-      // #region agent log
-      {const w=window as Window&{__h1f2R?:{r:number,t:number}};const s=w.__h1f2R??(w.__h1f2R={r:0,t:Date.now()});s.r+=1;const now=Date.now();if(now-s.t>=3000){fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1f2ec9'},body:JSON.stringify({sessionId:'1f2ec9',location:'highlighter.ts:updateSVGHighlightOrdering',message:'svg-reorder-batch',data:{reorders:s.r,rectCount:layerHighlights.length},timestamp:now,hypothesisId:'B',runId:'rest-flicker-1'})}).catch(()=>{});s.r=0;s.t=now}}
-      // #endregion
       layer.replaceChildren(...layerHighlights);
     }
   }

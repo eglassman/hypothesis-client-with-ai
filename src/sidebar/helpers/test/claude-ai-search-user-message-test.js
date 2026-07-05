@@ -1,5 +1,4 @@
 import * as fixtures from '../../test/annotation-fixtures';
-
 import {
   annotationMatchesHiddenTagInventoryRow,
   buildCandidateRows,
@@ -323,24 +322,19 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     it('countAiSearchQuotesSkippedAsDuplicates counts non-empty only', () => {
       const raw = [{ text: 'a' }, { text: 'b' }, { text: '' }];
       const filtered = [{ text: 'b' }, { text: '' }];
-      assert.equal(
-        countAiSearchQuotesSkippedAsDuplicates(raw, filtered),
-        1,
-      );
+      assert.equal(countAiSearchQuotesSkippedAsDuplicates(raw, filtered), 1);
     });
   });
 
   describe('buildCandidateRows', () => {
     it('includes Set A on matching URI with quote', () => {
-      const rows = buildCandidateRows(
-        [
-          textQuoteAnn({
-            id: 'a1',
-            tags: ['schema', 'ai-user-approved'],
-            text: 'ai query',
-          }),
-        ],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'a1',
+          tags: ['schema', 'ai-user-approved'],
+          text: 'ai query',
+        }),
+      ]);
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].set, 'A');
       assert.equal(rows[0].tag, 'schema');
@@ -348,9 +342,9 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     });
 
     it('includes Set B when not ai-tagged', () => {
-      const rows = buildCandidateRows(
-        [textQuoteAnn({ id: 'b1', tags: ['foo'], text: 'note' })],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({ id: 'b1', tags: ['foo'], text: 'note' }),
+      ]);
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].set, 'B');
     });
@@ -367,55 +361,47 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
     });
 
     it('excludes replies', () => {
-      const rows = buildCandidateRows(
-        [
-          textQuoteAnn({
-            id: 'r1',
-            tags: ['x'],
-            text: 'reply',
-            references: ['parent'],
-          }),
-        ],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'r1',
+          tags: ['x'],
+          text: 'reply',
+          references: ['parent'],
+        }),
+      ]);
       assert.lengthOf(rows, 0);
     });
 
     it('excludes ai-pending', () => {
-      const rows = buildCandidateRows(
-        [
-          textQuoteAnn({
-            id: 'p1',
-            tags: ['ai-pending'],
-            text: 'x',
-          }),
-        ],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'p1',
+          tags: ['ai-pending'],
+          text: 'x',
+        }),
+      ]);
       assert.lengthOf(rows, 0);
     });
 
     it('excludes neg-example-only annotations from Set B', () => {
-      const rows = buildCandidateRows(
-        [
-          textQuoteAnn({
-            id: 'n1',
-            tags: ['methods-neg-example'],
-            text: 'declined',
-          }),
-        ],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'n1',
+          tags: ['methods-neg-example'],
+          text: 'declined',
+        }),
+      ]);
       assert.lengthOf(rows, 0);
     });
 
     it('includes tagged highlight with no body text', () => {
-      const rows = buildCandidateRows(
-        [
-          textQuoteAnn({
-            id: 'h1',
-            tags: ['marked'],
-            text: '',
-          }),
-        ],
-      );
+      const rows = buildCandidateRows([
+        textQuoteAnn({
+          id: 'h1',
+          tags: ['marked'],
+          text: '',
+        }),
+      ]);
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].query, '');
     });
@@ -514,8 +500,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
   });
 
   describe('collectPositiveExamplesFromAnnotations', () => {
-    it('returns rows and logs timing', async () => {
-      sinon.stub(console, 'log');
+    it('returns rows', async () => {
       const del = sinon.stub().resolves();
       const ann = textQuoteAnn({
         id: 'c1',
@@ -527,10 +512,6 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       });
       assert.lengthOf(rows, 1);
       assert.equal(rows[0].tag, 'z');
-      const logCall = console.log.getCall(console.log.callCount - 1);
-      assert.equal(logCall.args[0], '[AISearch] positive examples construction');
-      assert.property(logCall.args[1], 'elapsedMs');
-      assert.isNumber(logCall.args[1].elapsedMs);
     });
   });
 
@@ -571,11 +552,21 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find me',
       });
       assert.equal(
-        countTagInventoryRowPendingAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        countTagInventoryRowPendingAnnotations(
+          [pending, approved],
+          pdf,
+          'schema',
+          'find me',
+        ),
         1,
       );
       assert.equal(
-        countTagInventoryRowTotalAnnotations([pending, approved], pdf, 'schema', 'find me'),
+        countTagInventoryRowTotalAnnotations(
+          [pending, approved],
+          pdf,
+          'schema',
+          'find me',
+        ),
         2,
       );
     });
@@ -587,11 +578,21 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         text: 'find me',
       });
       assert.equal(
-        countTagInventoryRowPendingAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        countTagInventoryRowPendingAnnotations(
+          [wrongOrder],
+          pdf,
+          'schema',
+          'find me',
+        ),
         0,
       );
       assert.equal(
-        countTagInventoryRowTotalAnnotations([wrongOrder], pdf, 'schema', 'find me'),
+        countTagInventoryRowTotalAnnotations(
+          [wrongOrder],
+          pdf,
+          'schema',
+          'find me',
+        ),
         1,
       );
     });
@@ -602,8 +603,14 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: 'q',
       });
-      assert.equal(countTagInventoryRowPendingAnnotations([manual], pdf, 't1', 'q'), 0);
-      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'), 1);
+      assert.equal(
+        countTagInventoryRowPendingAnnotations([manual], pdf, 't1', 'q'),
+        0,
+      );
+      assert.equal(
+        countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'),
+        1,
+      );
     });
 
     it('does not include empty-text manual annotation for non-empty query rows', () => {
@@ -612,7 +619,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: '',
       });
-      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'), 0);
+      assert.equal(
+        countTagInventoryRowTotalAnnotations([manual], pdf, 't1', 'q'),
+        0,
+      );
     });
 
     it('includes empty-text manual annotation for empty-query rows', () => {
@@ -621,7 +631,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: '',
       });
-      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''), 1);
+      assert.equal(
+        countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''),
+        1,
+      );
     });
 
     it('includes non-empty-text manual annotation for empty-query rows', () => {
@@ -630,7 +643,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['t1'],
         text: 'my note body',
       });
-      assert.equal(countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''), 1);
+      assert.equal(
+        countTagInventoryRowTotalAnnotations([manual], pdf, 't1', ''),
+        1,
+      );
     });
 
     it('excludes replies and wrong uri', () => {
@@ -646,7 +662,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['ai-pending', 'x'],
         text: 'q',
       });
-      assert.equal(countTagInventoryRowTotalAnnotations([reply, other], pdf, 'x', 'q'), 0);
+      assert.equal(
+        countTagInventoryRowTotalAnnotations([reply, other], pdf, 'x', 'q'),
+        0,
+      );
     });
   });
 
@@ -657,7 +676,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['ai-pending'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, ''), 'deleteAnnotation');
+      assert.equal(
+        deleteAllActionForTagInventoryRowMatch(ann, ''),
+        'deleteAnnotation',
+      );
     });
 
     it('deleteAll: multiple content tags yields removeRowTag', () => {
@@ -666,7 +688,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['ai-pending', 'a', 'b'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, 'a'), 'removeRowTag');
+      assert.equal(
+        deleteAllActionForTagInventoryRowMatch(ann, 'a'),
+        'removeRowTag',
+      );
     });
 
     it('deleteAll: single content tag yields deleteAnnotation', () => {
@@ -675,7 +700,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['schema', 'ai-user-approved'],
         text: 'q',
       });
-      assert.equal(deleteAllActionForTagInventoryRowMatch(ann, 'schema'), 'deleteAnnotation');
+      assert.equal(
+        deleteAllActionForTagInventoryRowMatch(ann, 'schema'),
+        'deleteAnnotation',
+      );
     });
 
     it('listSavedAnnotationsMatchingTagInventoryRow returns Total matches', () => {
@@ -689,14 +717,22 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         tags: ['other'],
         text: 'xx',
       });
-      const list = listSavedAnnotationsMatchingTagInventoryRow([a, b], pdf, 't', 'qq');
+      const list = listSavedAnnotationsMatchingTagInventoryRow(
+        [a, b],
+        pdf,
+        't',
+        'qq',
+      );
       assert.lengthOf(list, 1);
       assert.equal(list[0].id, '1');
     });
 
     it('tagsAfterRemovingTagInventoryRowSchemaTag removes the schema tag', () => {
       assert.deepEqual(
-        tagsAfterRemovingTagInventoryRowSchemaTag(['ai-pending', 'a', 'b'], 'a'),
+        tagsAfterRemovingTagInventoryRowSchemaTag(
+          ['ai-pending', 'a', 'b'],
+          'a',
+        ),
         ['ai-pending', 'b'],
       );
     });
@@ -729,5 +765,4 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       );
     });
   });
-
 });

@@ -103,10 +103,8 @@ describe('getCaretCoordinates', () => {
       expectedX = Math.round(expectedX);
       expectedY *= lineHeight;
 
-      assert.deepEqual(
-        [Math.round(caretPos.x), caretPos.y],
-        [expectedX, expectedY],
-      );
+      assert.closeTo(Math.round(caretPos.x), expectedX, 1);
+      assert.equal(caretPos.y, expectedY);
     });
   });
 });

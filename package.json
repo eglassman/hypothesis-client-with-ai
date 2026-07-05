@@ -126,5 +126,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "zod": "^4.3.6"
+  },
+  "resolutions": {
+    "@hypothesis/frontend-build@^5.1.0": "patch:@hypothesis/frontend-build@npm%3A5.1.0#./.yarn/patches/@hypothesis-frontend-build-npm-5.1.0-8ebc1687f9.patch"
   }
 }

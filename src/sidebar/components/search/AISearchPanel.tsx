@@ -19,6 +19,8 @@ import {
   rgbaStringToHexColorInput,
   TAG_HIGHLIGHT_ALPHA,
 } from '../../../shared/tag-color-from-string';
+import type { SavedAnnotation } from '../../../types/api';
+import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import {
   buildClaudeAISearchUserMessage,
   collectNegativeExamplesFromAnnotations,
@@ -31,14 +33,15 @@ import {
   listStrictTagInventoryRowPendingAnnotations,
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
-import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import {
   claudeAccessibleDocumentUri,
   documentUriAliases,
   filterSavedAnnotationsForDocument,
   resolveDocumentUriFromCandidates,
 } from '../../helpers/document-uri';
-import { pushTagPalette } from '../../services/tag-palette-sync';
+import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
+import { PUBLIC_GROUP_ID } from '../../helpers/groups';
+import { sharedPermissions } from '../../helpers/permissions';
 import {
   countAnnotationsForTagInventoryRow,
   isNegativeSchemaTag,
@@ -46,37 +49,34 @@ import {
   listAnnotationsForTagInventoryRow,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
-import { PUBLIC_GROUP_ID } from '../../helpers/groups';
-import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
-import { sharedPermissions } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
-import type { TagInventoryGroupSyncService } from '../../services/tag-inventory-group-sync';
-import { savedAnnotationsForCurrentDocument } from '../../services/tag-inventory-group-sync';
-import type { PersistedTagInventoryService } from '../../services/persisted-tag-inventory';
-import type { ExperimentLogService } from '../../services/experiment-log';
-import type { SavedAnnotation } from '../../../types/api';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
-import type { FrameSyncService } from '../../services/frame-sync';
 import {
   isClaudeDocumentDownloadError,
   type ClaudeSearchResult,
   type ClaudeService,
 } from '../../services/claude';
+import type { ExperimentLogService } from '../../services/experiment-log';
+import type { FrameSyncService } from '../../services/frame-sync';
+import type { PersistedTagInventoryService } from '../../services/persisted-tag-inventory';
+import type { TagInventoryGroupSyncService } from '../../services/tag-inventory-group-sync';
+import { savedAnnotationsForCurrentDocument } from '../../services/tag-inventory-group-sync';
+import { pushTagPalette } from '../../services/tag-palette-sync';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import {
   tagInventoryRowId,
   type TagInventoryRow,
 } from '../../store/modules/sidebar-panels';
-import SidebarPanel from '../SidebarPanel';
-import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
-import SearchField from './SearchField';
 import {
   createRateLimitCoordinator,
   isRateLimitFetchError,
   retryOnRateLimit,
 } from '../../util/retry-on-rate-limit';
+import SidebarPanel from '../SidebarPanel';
+import SearchField from './SearchField';
+import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
@@ -223,9 +223,7 @@ function AISearchPanel({
   const documentUri = resolveDocumentUriFromCandidates(store, [...uriAliases]);
 
   const globalRowLock =
-    runAISearchInFlight ||
-    rerunningRowId !== null ||
-    deletingRowId !== null;
+    runAISearchInFlight || rerunningRowId !== null || deletingRowId !== null;
   const canAnnotateManually = schemaTag.trim().length > 0;
 
   /** Rows visible in the focused group (before the hidden-row toggle). */
@@ -365,7 +363,9 @@ function AISearchPanel({
       const groupId = store.focusedGroupId();
 
       if (!userid) {
-        toastMessenger.error('Not signed in — please sign in to use AI search.');
+        toastMessenger.error(
+          'Not signed in — please sign in to use AI search.',
+        );
         return;
       }
       if (!groupId) {
@@ -397,7 +397,10 @@ function AISearchPanel({
           fewShotAnnotations =
             await tagInventoryGroupSync.getGroupAnnotations(groupId);
         } catch (error) {
-          console.error('Failed to load group annotations for AI search:', error);
+          console.error(
+            'Failed to load group annotations for AI search:',
+            error,
+          );
           const detail =
             error instanceof Error ? error.message : 'Unknown error';
           toastMessenger.error(
@@ -430,12 +433,12 @@ function AISearchPanel({
       setClaudeRunStartedAt(Date.now());
       let claudeResult: ClaudeSearchResult;
       const isPdfDocument = uriAliases.some(u => u.startsWith('urn:x-pdf:'));
-      const claudeRequestBase = {
-        query: fullUserMessage,
-        apiKey: claude.apiKey(),
-        signal,
-      };
       try {
+        const claudeRequestBase = {
+          query: fullUserMessage,
+          apiKey: claude.apiKey(),
+          signal,
+        };
         toastMessenger.notice('Waiting on model');
         try {
           // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
@@ -579,7 +582,12 @@ function AISearchPanel({
       return;
     }
     const docUri = focusedGroupId === PUBLIC_GROUP_ID ? documentUri : undefined;
-    const targetId = tagInventoryRowId(schemaTag, query, focusedGroupId ?? undefined, docUri ?? undefined);
+    const targetId = tagInventoryRowId(
+      schemaTag,
+      query,
+      focusedGroupId ?? undefined,
+      docUri ?? undefined,
+    );
     const matchingRow = aiRows.find(r => r.id === targetId);
     if (matchingRow) {
       await onRerunRow(matchingRow);
@@ -603,7 +611,9 @@ function AISearchPanel({
       ]);
 
       if (!userid) {
-        toastMessenger.error('Not signed in — please sign in to use AI search.');
+        toastMessenger.error(
+          'Not signed in — please sign in to use AI search.',
+        );
         return;
       }
       if (!groupId) {
@@ -809,10 +819,7 @@ function AISearchPanel({
                   );
                   let updated = await retryOnRateLimit(
                     () =>
-                      api.annotation.update(
-                        { id: ann.id },
-                        { tags: newTags },
-                      ),
+                      api.annotation.update({ id: ann.id }, { tags: newTags }),
                     retryOpts,
                   );
                   for (const [key, value] of Object.entries(ann)) {
@@ -904,9 +911,7 @@ function AISearchPanel({
     if (!tag) {
       return highlightRgbaFromString('');
     }
-    return (
-      schemaTagColors[tag] ?? highlightRgbaFromString(tag)
-    );
+    return schemaTagColors[tag] ?? highlightRgbaFromString(tag);
   }
 
   return (
@@ -1059,276 +1064,288 @@ function AISearchPanel({
                     {emptyHistoryMessage}
                   </p>
                 ) : (
-                <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
-                  <colgroup>
-                    <col className="w-min" />
-                    {/* min: short tags fit on one line; max: do not outgrow the query column */}
-                    <col className="min-w-[7rem] max-w-[11rem]" />
-                    <col className="w-full min-w-0" />
-                    <col className="w-min" />
-                    <col className="w-min" />
-                  </colgroup>
-                  <thead>
-                    <tr className="border-b border-grey-3 text-color-text-light">
-                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
-                        <span className="sr-only">Color</span>
-                      </th>
-                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
-                        Tag
-                      </th>
-                      <th className="py-0.5 pr-2 text-sm font-normal" scope="col">
-                        Query
-                      </th>
-                      <th
-                        className="py-0.5 pr-2 text-right text-sm font-normal tabular-nums"
-                        scope="col"
-                      >
-                        <span className="sr-only">
-                          Pending and total matching annotations for this tag and
-                          query
-                        </span>
-                      </th>
-                      <th
-                        className="py-0.5 text-center text-sm font-normal"
-                        scope="col"
-                      >
-                        <span className="sr-only">
-                          Rerun AI search, delete pending, delete all
-                        </span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayRows.map(row => {
-                      const tagKey = row.schemaTag.trim();
-                      const rgba = colorForRow(row);
-                      const hex = rgbaStringToHexColorInput(rgba);
-                      const pendingCount = documentUri
-                        ? countTagInventoryRowPendingAnnotations(
-                            savedAnnotations,
-                            documentUri,
-                            row.schemaTag,
-                            row.query,
-                            uriAliases,
-                          )
-                        : 0;
-                      const totalCountFromStore = focusedGroupId
-                        ? countAnnotationsForTagInventoryRow(
-                            annotationsForInventoryCount,
-                            row,
-                            {
-                              focusedGroupId,
-                              documentUri: documentUri,
-                              documentUriAliases: uriAliases,
-                            },
-                          )
-                        : 0;
-                      const totalCount =
-                        deleteAllRemaining?.rowId === row.id
-                          ? deleteAllRemaining.remaining
-                          : totalCountFromStore;
-                      const rerunDisabled =
-                        globalRowLock || !documentUri;
-                      const deletePendingDisabled =
-                        globalRowLock ||
-                        !documentUri ||
-                        pendingCount === 0;
-                      const deleteAllDisabled =
-                        globalRowLock || !documentUri;
-                      return (
-                        <tr
-                          key={row.id}
-                          className={classnames(
-                            'border-b border-grey-2 last:border-0',
-                            row.hidden && 'opacity-70',
-                          )}
+                  <table className="w-full table-auto border-collapse text-left text-sm text-color-text">
+                    <colgroup>
+                      <col className="w-min" />
+                      {/* min: short tags fit on one line; max: do not outgrow the query column */}
+                      <col className="min-w-[7rem] max-w-[11rem]" />
+                      <col className="w-full min-w-0" />
+                      <col className="w-min" />
+                      <col className="w-min" />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-grey-3 text-color-text-light">
+                        <th
+                          className="py-0.5 pr-2 text-sm font-normal"
+                          scope="col"
                         >
-                          <td className="py-0.5 pr-2 align-middle whitespace-nowrap w-min">
-                            <div className="flex flex-row items-center gap-1">
-                              <button
-                                type="button"
-                                className={classnames(
-                                  aiSearchHistoryActionButtonClass,
-                                  'shrink-0',
-                                )}
-                                title={
-                                  row.hidden
-                                    ? 'Render this highlight in the PDF'
-                                    : 'Hide this highlight from the PDF'
-                                }
-                                aria-label={
-                                  row.hidden
-                                    ? 'Render this highlight in the PDF'
-                                    : 'Hide this highlight from the PDF'
-                                }
-                                onClick={() =>
-                                  store.setTagInventoryRowHidden(
-                                    row.id,
-                                    !row.hidden,
-                                  )
-                                }
-                              >
-                                {row.hidden ? (
-                                  <ShowIcon className="w-em h-em" />
-                                ) : (
-                                  <HideIcon className="w-em h-em" />
-                                )}
-                              </button>
-                              <input
-                                aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
-                                className="h-6 w-8 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
-                                disabled={!tagKey}
-                                title={
-                                  tagKey
-                                    ? undefined
-                                    : 'Set a schema tag to customize color'
-                                }
-                                type="color"
-                                value={hex}
-                                onInput={(e: Event) => {
-                                  if (!tagKey) {
-                                    return;
-                                  }
-                                  const v = (e.target as HTMLInputElement)
-                                    .value;
-                                  const nextRgba = hexColorInputToRgba(
-                                    v,
-                                    TAG_HIGHLIGHT_ALPHA,
-                                  );
-                                  store.setTagInventorySchemaTagColor(
-                                    tagKey,
-                                    nextRgba,
-                                  );
-                                }}
-                              />
-                            </div>
-                          </td>
-                          <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
-                            {tagKey ? (
-                              <button
-                                type="button"
-                                className={classnames(
-                                  'm-0 w-full max-w-full min-w-0 border-0 bg-transparent p-0',
-                                  'text-left font-inherit text-xs leading-snug text-color-text',
-                                  'cursor-pointer break-words underline underline-offset-2',
-                                  'hover:text-color-text',
-                                  'rounded focus-visible-ring',
-                                )}
-                                title={`Show annotations with tag: ${tagKey}`}
-                                aria-label={`Filter sidebar to annotations tagged ${tagKey}`}
-                                onClick={() => {
-                                  store.setFilterQuery(
-                                    formatSidebarTagFilter(tagKey),
-                                  );
-                                }}
-                              >
-                                {row.schemaTag}
-                              </button>
-                            ) : (
-                              <span className="text-color-text-light">—</span>
+                          <span className="sr-only">Color</span>
+                        </th>
+                        <th
+                          className="py-0.5 pr-2 text-sm font-normal"
+                          scope="col"
+                        >
+                          Tag
+                        </th>
+                        <th
+                          className="py-0.5 pr-2 text-sm font-normal"
+                          scope="col"
+                        >
+                          Query
+                        </th>
+                        <th
+                          className="py-0.5 pr-2 text-right text-sm font-normal tabular-nums"
+                          scope="col"
+                        >
+                          <span className="sr-only">
+                            Pending and total matching annotations for this tag
+                            and query
+                          </span>
+                        </th>
+                        <th
+                          className="py-0.5 text-center text-sm font-normal"
+                          scope="col"
+                        >
+                          <span className="sr-only">
+                            Rerun AI search, delete pending, delete all
+                          </span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayRows.map(row => {
+                        const tagKey = row.schemaTag.trim();
+                        const rgba = colorForRow(row);
+                        const hex = rgbaStringToHexColorInput(rgba);
+                        const pendingCount = documentUri
+                          ? countTagInventoryRowPendingAnnotations(
+                              savedAnnotations,
+                              documentUri,
+                              row.schemaTag,
+                              row.query,
+                              uriAliases,
+                            )
+                          : 0;
+                        const totalCountFromStore = focusedGroupId
+                          ? countAnnotationsForTagInventoryRow(
+                              annotationsForInventoryCount,
+                              row,
+                              {
+                                focusedGroupId,
+                                documentUri: documentUri,
+                                documentUriAliases: uriAliases,
+                              },
+                            )
+                          : 0;
+                        const totalCount =
+                          deleteAllRemaining?.rowId === row.id
+                            ? deleteAllRemaining.remaining
+                            : totalCountFromStore;
+                        const rerunDisabled = globalRowLock || !documentUri;
+                        const deletePendingDisabled =
+                          globalRowLock || !documentUri || pendingCount === 0;
+                        const deleteAllDisabled = globalRowLock || !documentUri;
+                        return (
+                          <tr
+                            key={row.id}
+                            className={classnames(
+                              'border-b border-grey-2 last:border-0',
+                              row.hidden && 'opacity-70',
                             )}
-                          </td>
-                          <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
-                            {row.query.trim() ? (
-                              row.query
-                            ) : (
-                              <span className="text-color-text-light">
-                                No query - matches this tag across the document
+                          >
+                            <td className="py-0.5 pr-2 align-middle whitespace-nowrap w-min">
+                              <div className="flex flex-row items-center gap-1">
+                                <button
+                                  type="button"
+                                  className={classnames(
+                                    aiSearchHistoryActionButtonClass,
+                                    'shrink-0',
+                                  )}
+                                  title={
+                                    row.hidden
+                                      ? 'Render this highlight in the PDF'
+                                      : 'Hide this highlight from the PDF'
+                                  }
+                                  aria-label={
+                                    row.hidden
+                                      ? 'Render this highlight in the PDF'
+                                      : 'Hide this highlight from the PDF'
+                                  }
+                                  onClick={() =>
+                                    store.setTagInventoryRowHidden(
+                                      row.id,
+                                      !row.hidden,
+                                    )
+                                  }
+                                >
+                                  {row.hidden ? (
+                                    <ShowIcon className="w-em h-em" />
+                                  ) : (
+                                    <HideIcon className="w-em h-em" />
+                                  )}
+                                </button>
+                                <input
+                                  aria-label={`Highlight color for tag ${tagKey || '(empty)'}`}
+                                  className="h-6 w-8 cursor-pointer rounded border border-grey-3 bg-transparent p-0"
+                                  disabled={!tagKey}
+                                  title={
+                                    tagKey
+                                      ? undefined
+                                      : 'Set a schema tag to customize color'
+                                  }
+                                  type="color"
+                                  value={hex}
+                                  onInput={(e: Event) => {
+                                    if (!tagKey) {
+                                      return;
+                                    }
+                                    const v = (e.target as HTMLInputElement)
+                                      .value;
+                                    const nextRgba = hexColorInputToRgba(
+                                      v,
+                                      TAG_HIGHLIGHT_ALPHA,
+                                    );
+                                    store.setTagInventorySchemaTagColor(
+                                      tagKey,
+                                      nextRgba,
+                                    );
+                                  }}
+                                />
+                              </div>
+                            </td>
+                            <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
+                              {tagKey ? (
+                                <button
+                                  type="button"
+                                  className={classnames(
+                                    'm-0 w-full max-w-full min-w-0 border-0 bg-transparent p-0',
+                                    'text-left font-inherit text-xs leading-snug text-color-text',
+                                    'cursor-pointer break-words underline underline-offset-2',
+                                    'hover:text-color-text',
+                                    'rounded focus-visible-ring',
+                                  )}
+                                  title={`Show annotations with tag: ${tagKey}`}
+                                  aria-label={`Filter sidebar to annotations tagged ${tagKey}`}
+                                  onClick={() => {
+                                    store.setFilterQuery(
+                                      formatSidebarTagFilter(tagKey),
+                                    );
+                                  }}
+                                >
+                                  {row.schemaTag}
+                                </button>
+                              ) : (
+                                <span className="text-color-text-light">—</span>
+                              )}
+                            </td>
+                            <td className="py-0.5 pr-2 align-middle break-words text-xs leading-snug">
+                              {row.query.trim() ? (
+                                row.query
+                              ) : (
+                                <span className="text-color-text-light">
+                                  No query - matches this tag across the
+                                  document
+                                </span>
+                              )}
+                            </td>
+                            <td className="w-min py-0.5 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
+                              <span
+                                title="Strict AI-pending annotations for this tag and query on this document"
+                                className="cursor-help tabular-nums"
+                                aria-label={`${pendingCount} pending`}
+                              >
+                                {pendingCount}
                               </span>
-                            )}
-                          </td>
-                          <td className="w-min py-0.5 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
-                            <span
-                              title="Strict AI-pending annotations for this tag and query on this document"
-                              className="cursor-help tabular-nums"
-                              aria-label={`${pendingCount} pending`}
-                            >
-                              {pendingCount}
-                            </span>
-                            <span className="text-color-text-light" aria-hidden="true">
-                              {' '}
-                              |{' '}
-                            </span>
-                            <span
-                              title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
-                              className="cursor-help tabular-nums"
-                              aria-label={`${totalCount} total`}
-                            >
-                              {totalCount}
-                            </span>
-                          </td>
-                          <td className="w-min py-0.5 align-middle whitespace-nowrap">
-                            <div className="flex w-min flex-row items-center gap-0.5">
-                              <button
-                                type="button"
-                                aria-disabled={rerunDisabled}
-                                tabIndex={rerunDisabled ? -1 : undefined}
-                                className={classnames(
-                                  aiSearchHistoryActionButtonClass,
-                                  rerunDisabled && 'opacity-50 cursor-not-allowed',
-                                )}
-                                title={aiSearchRerunButtonHelpText}
-                                aria-label={aiSearchRerunButtonHelpText}
-                                onClick={e => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  if (rerunDisabled) {
-                                    return;
-                                  }
-                                  void onRerunRow(row);
-                                }}
+                              <span
+                                className="text-color-text-light"
+                                aria-hidden="true"
                               >
-                                <RedoIcon className="w-em h-em" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-disabled={deletePendingDisabled}
-                                tabIndex={deletePendingDisabled ? -1 : undefined}
-                                className={classnames(
-                                  aiSearchHistoryActionButtonClass,
-                                  deletePendingDisabled &&
-                                    'opacity-50 cursor-not-allowed',
-                                )}
-                                title="Delete pending AI annotations for this tag and query"
-                                aria-label="Delete pending"
-                                onClick={e => {
-                                  if (deletePendingDisabled) {
+                                {' '}
+                                |{' '}
+                              </span>
+                              <span
+                                title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
+                                className="cursor-help tabular-nums"
+                                aria-label={`${totalCount} total`}
+                              >
+                                {totalCount}
+                              </span>
+                            </td>
+                            <td className="w-min py-0.5 align-middle whitespace-nowrap">
+                              <div className="flex w-min flex-row items-center gap-0.5">
+                                <button
+                                  type="button"
+                                  aria-disabled={rerunDisabled}
+                                  tabIndex={rerunDisabled ? -1 : undefined}
+                                  className={classnames(
+                                    aiSearchHistoryActionButtonClass,
+                                    rerunDisabled &&
+                                      'opacity-50 cursor-not-allowed',
+                                  )}
+                                  title={aiSearchRerunButtonHelpText}
+                                  aria-label={aiSearchRerunButtonHelpText}
+                                  onClick={e => {
                                     e.preventDefault();
-                                    return;
+                                    e.stopPropagation();
+                                    if (rerunDisabled) {
+                                      return;
+                                    }
+                                    void onRerunRow(row);
+                                  }}
+                                >
+                                  <RedoIcon className="w-em h-em" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-disabled={deletePendingDisabled}
+                                  tabIndex={
+                                    deletePendingDisabled ? -1 : undefined
                                   }
-                                  onDeletePending(row);
-                                }}
-                              >
-                                <CancelIcon className="w-em h-em" />
-                              </button>
-                              <button
-                                type="button"
-                                aria-disabled={deleteAllDisabled}
-                                tabIndex={deleteAllDisabled ? -1 : undefined}
-                                className={classnames(
-                                  aiSearchHistoryActionButtonClass,
-                                  deleteAllDisabled &&
-                                    'opacity-50 cursor-not-allowed',
-                                )}
-                                title="Delete all matching annotations for this tag and query"
-                                aria-label="Delete all"
-                                onClick={e => {
-                                  if (deleteAllDisabled) {
-                                    e.preventDefault();
-                                    return;
-                                  }
-                                  onDeleteAll(row);
-                                }}
-                              >
-                                <TrashIcon className="w-em h-em" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                                  className={classnames(
+                                    aiSearchHistoryActionButtonClass,
+                                    deletePendingDisabled &&
+                                      'opacity-50 cursor-not-allowed',
+                                  )}
+                                  title="Delete pending AI annotations for this tag and query"
+                                  aria-label="Delete pending"
+                                  onClick={e => {
+                                    if (deletePendingDisabled) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    onDeletePending(row);
+                                  }}
+                                >
+                                  <CancelIcon className="w-em h-em" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-disabled={deleteAllDisabled}
+                                  tabIndex={deleteAllDisabled ? -1 : undefined}
+                                  className={classnames(
+                                    aiSearchHistoryActionButtonClass,
+                                    deleteAllDisabled &&
+                                      'opacity-50 cursor-not-allowed',
+                                  )}
+                                  title="Delete all matching annotations for this tag and query"
+                                  aria-label="Delete all"
+                                  onClick={e => {
+                                    if (deleteAllDisabled) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+                                    onDeleteAll(row);
+                                  }}
+                                >
+                                  <TrashIcon className="w-em h-em" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <p className="text-color-text-light text-xs leading-snug m-0 grow min-w-[12rem]">

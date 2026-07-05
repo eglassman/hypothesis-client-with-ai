@@ -11,7 +11,8 @@ export type PanelName =
   | 'shareGroupAnnotations'
   | 'searchAnnotations'
   | 'aiSearchAnnotations'
-  | 'emptyPanel';
+  | 'emptyPanel'
+  | 'tagLegend';
 
 /**
  * The top-level tabs in the sidebar interface. Used to reference which tab

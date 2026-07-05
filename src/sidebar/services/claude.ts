@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import {zodOutputFormat} from '@anthropic-ai/sdk/helpers/zod';
-import {z} from 'zod';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { z } from 'zod';
 
 const PassageSchema = z.object({
   text: z
@@ -120,7 +120,7 @@ export class ClaudeService {
 
   /**
    * Search a document with a free-text query using Claude's native document support.
-   * Returns data in the same shape as ReductoService so callers don't need to change.
+   * Returns the quote-list shape expected by the AI search panel.
    */
   async AISearchDocument(
     request: ClaudeSearchRequest,
@@ -151,11 +151,6 @@ export class ClaudeService {
           cache_control: { type: 'ephemeral' },
         } as const);
 
-    console.log('[ClaudeService] start call', {
-      documentUri: documentUri ?? null,
-      pdfBase64Bytes: documentPdfBase64?.length ?? 0,
-      query,
-    });
     const startedAt = Date.now();
     try {
       const message = await client.messages.parse(
@@ -183,19 +178,14 @@ export class ClaudeService {
         signal ? { signal } : undefined,
       );
 
-      console.log('[ClaudeService] success', {
-        elapsedMs: Date.now() - startedAt,
-      });
-
       const passages = message.parsed_output;
       if (!passages) {
         throw new Error('Claude returned no structured output');
       }
-      console.log('[ClaudeService] parsed quotes:', passages);
 
-      // Wrap in the Reducto-compatible shape: { result: [{ quotes: [...] }] }
-      const quotes = passages.map(p => ({text: p.text}));
-      return {answer: {result: [{quotes}]}};
+      // Keep the response shape stable for the AI search panel.
+      const quotes = passages.map(p => ({ text: p.text }));
+      return { answer: { result: [{ quotes }] } };
     } catch (error: unknown) {
       const aborted =
         signal?.aborted ||

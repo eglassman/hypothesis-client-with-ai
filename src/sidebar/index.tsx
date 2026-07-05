@@ -23,29 +23,30 @@ import { APIService } from './services/api';
 import { APIRoutesService } from './services/api-routes';
 import { AuthService } from './services/auth';
 import { AutosaveService } from './services/autosave';
+import { ClaudeService } from './services/claude';
 import { DashboardService } from './services/dashboard';
+import { ExperimentLogService } from './services/experiment-log';
 import { FrameSyncService } from './services/frame-sync';
 import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
-import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
+import { NodeLinkStateService } from './services/node-link-state';
 import { PersistedDefaultsService } from './services/persisted-defaults';
+import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { RouterService } from './services/router';
-import { ClaudeService } from './services/claude';
-import { ExperimentLogService } from './services/experiment-log';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
 import { StreamerService } from './services/streamer';
+import { TagInventoryGroupSyncService } from './services/tag-inventory-group-sync';
+import { setupTagPaletteSync } from './services/tag-palette-sync';
 import { TagsService } from './services/tags';
 import { ThreadsService } from './services/threads';
 import { ThumbnailService } from './services/thumbnail';
 import { ToastMessengerService } from './services/toast-messenger';
 import { createSidebarStore } from './store';
 import type { SidebarStore } from './store';
-import { setupTagPaletteSync } from './services/tag-palette-sync';
-import { TagInventoryGroupSyncService } from './services/tag-inventory-group-sync';
 import { disableOpenerForExternalLinks } from './util/disable-opener-for-external-links';
 import * as sentry from './util/sentry';
 
@@ -165,6 +166,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('importAnnotationsService', ImportAnnotationsService)
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
+    .register('nodeLinkState', NodeLinkStateService)
     .register('persistedDefaults', PersistedDefaultsService)
     .register('persistedTagInventory', PersistedTagInventoryService)
     .register('tagInventoryGroupSync', TagInventoryGroupSyncService)
@@ -191,7 +193,7 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
 
   //if (process.env.NODE_ENV !== 'production') {
   (window as Window & { __sidebarStore?: SidebarStore }).__sidebarStore =
-      container.get('store') as SidebarStore;
+    container.get('store') as SidebarStore;
   //}
 
   // Initialize services.

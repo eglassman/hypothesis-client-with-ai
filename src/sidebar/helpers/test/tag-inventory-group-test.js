@@ -1,5 +1,5 @@
 import * as fixtures from '../../test/annotation-fixtures';
-
+import { PUBLIC_GROUP_ID } from '../groups';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
@@ -22,7 +22,6 @@ import {
   rowDescriptorKey,
   sortTagInventoryRows,
 } from '../tag-inventory-group';
-import { PUBLIC_GROUP_ID } from '../groups';
 
 function publicScope(documentUri) {
   return {
@@ -41,17 +40,20 @@ describe('sidebar/helpers/tag-inventory-group', () => {
   const groupA = 'group-a-id';
 
   function savedAnn(props) {
+    const base = fixtures.defaultAnnotation();
     const {
       id,
       uri = pdf,
+      group = base.group,
       tags = [],
       text = '',
       references = [],
     } = props;
     return {
-      ...fixtures.defaultAnnotation(),
+      ...base,
       id,
       uri,
+      group,
       tags,
       text,
       references,
@@ -85,10 +87,9 @@ describe('sidebar/helpers/tag-inventory-group', () => {
     });
 
     it('negativeSchemaTags returns only negative schema tags', () => {
-      assert.deepEqual(
-        negativeSchemaTags(['methods', 'methods-neg-example']),
-        ['methods-neg-example'],
-      );
+      assert.deepEqual(negativeSchemaTags(['methods', 'methods-neg-example']), [
+        'methods-neg-example',
+      ]);
     });
   });
 
@@ -380,7 +381,10 @@ describe('sidebar/helpers/tag-inventory-group', () => {
         'methods',
         '',
       );
-      assert.deepEqual(matches.map(a => a.id), ['m1']);
+      assert.deepEqual(
+        matches.map(a => a.id),
+        ['m1'],
+      );
     });
   });
 
@@ -389,11 +393,13 @@ describe('sidebar/helpers/tag-inventory-group', () => {
       const query = 'find stats';
       const pending = savedAnn({
         id: 'p1',
+        group: PUBLIC_GROUP_ID,
         tags: ['methods', 'ai-pending'],
         text: query,
       });
       const manual = savedAnn({
         id: 'm1',
+        group: PUBLIC_GROUP_ID,
         tags: ['methods'],
         text: query,
       });
@@ -503,8 +509,12 @@ describe('sidebar/helpers/tag-inventory-group', () => {
     };
 
     it('private group: visible when groupId matches', () => {
-      assert.isTrue(isTagInventoryRowVisibleInScope(baseRow, privateScope(groupA)));
-      assert.isFalse(isTagInventoryRowVisibleInScope(baseRow, privateScope('other')));
+      assert.isTrue(
+        isTagInventoryRowVisibleInScope(baseRow, privateScope(groupA)),
+      );
+      assert.isFalse(
+        isTagInventoryRowVisibleInScope(baseRow, privateScope('other')),
+      );
     });
 
     it('public group: visible only when row.documentUri matches currentDocumentUri', () => {

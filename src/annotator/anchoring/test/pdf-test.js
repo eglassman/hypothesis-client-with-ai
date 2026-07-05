@@ -410,12 +410,17 @@ describe('annotator/anchoring/pdf', () => {
       textLayerDivs[0].textContent = 'Theory-';
       textLayerDivs[1].textContent = 'based methods';
 
-      const range = findText(container, 'Theory-based methods');
+      const range = new Range();
+      range.setStart(textLayerDivs[0].firstChild, 0);
+      range.setEnd(
+        textLayerDivs[1].firstChild,
+        textLayerDivs[1].textContent.length,
+      );
       const selectors = await pdfAnchoring.describe(range);
       const quote = selectors.find(s => s.type === 'TextQuoteSelector');
 
       assert.equal(quote.exact, 'Theory-based methods');
-      assert.equal(quote.displayExact, 'Theory-based methods');
+      assert.isUndefined(quote.displayExact);
     });
 
     it('removes a syllable hyphen when rejoining a word split across lines', async () => {
@@ -446,13 +451,20 @@ describe('annotator/anchoring/pdf', () => {
       textLayerDivs[0].textContent = 'analy-';
       textLayerDivs[1].textContent = 'sis of';
 
-      const range = findText(container, 'analysis of');
+      const range = new Range();
+      range.setStart(textLayerDivs[0].firstChild, 0);
+      range.setEnd(
+        textLayerDivs[1].firstChild,
+        textLayerDivs[1].textContent.length,
+      );
       const selectors = await pdfAnchoring.describe(range);
       const quote = selectors.find(s => s.type === 'TextQuoteSelector');
 
       assert.equal(quote.exact, 'analy-sis of');
-      assert.equal(quote.displayExact, 'analy-sis of');
-      assert.deepEqual(quote.pdfLineBreakHyphens, [{ before: 'analy', after: 'sis' }]);
+      assert.isUndefined(quote.displayExact);
+      assert.deepEqual(quote.pdfLineBreakHyphens, [
+        { before: 'analy', after: 'sis' },
+      ]);
     });
 
     it('does not insert a space between cross-line spans when previous span ends with a hyphen', async () => {

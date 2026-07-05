@@ -84,7 +84,14 @@ describe('sidebar.util.retry-on-rate-limit', () => {
 
     it('does not retry non-429 errors', async () => {
       const fn = sinon.stub().rejects(new Error('boom'));
-      await assert.isRejected(retryOnRateLimit(fn));
+      let error;
+      try {
+        await retryOnRateLimit(fn);
+      } catch (err) {
+        error = err;
+      }
+      assert.instanceOf(error, Error);
+      assert.equal(error.message, 'boom');
       assert.equal(fn.callCount, 1);
     });
   });

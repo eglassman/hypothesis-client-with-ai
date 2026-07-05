@@ -522,7 +522,7 @@ describe('Guest', () => {
         );
       });
 
-      it('marks highlights of other annotations as not focused', () => {
+      it('marks previously-hovered highlights as not focused', () => {
         const highlight0 = document.createElement('span');
         const highlight1 = document.createElement('span');
         const guest = createGuest();
@@ -532,10 +532,11 @@ describe('Guest', () => {
         ];
 
         emitSidebarEvent('hoverAnnotations', ['tag1']);
+        emitSidebarEvent('hoverAnnotations', ['tag2']);
 
         assert.calledWith(
           fakeHighlighter.setHighlightsFocused,
-          guest.anchors[1].highlights,
+          guest.anchors[0].highlights,
           false,
         );
       });
@@ -1959,9 +1960,7 @@ describe('Guest', () => {
       fakeIntegration.describe.resolves([]);
       const pos = { type: 'TextPositionSelector', start: 10, end: 15 };
       const page = { type: 'PageSelector', index: 2 };
-      fakeIntegration.describeQuoteOnly = sinon
-        .stub()
-        .resolves([pos, page]);
+      fakeIntegration.describeQuoteOnly = sinon.stub().resolves([pos, page]);
 
       const target = {
         selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],

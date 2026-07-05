@@ -61,6 +61,9 @@ describe('SidebarTabs', () => {
       updateLocationEnrichmentTimeout: sinon.stub(),
       allAnnotations: sinon.stub().returns([]),
       selectedTab: sinon.stub().returns('annotation'),
+      closeSidebarPanel: sinon.stub(),
+      isSidebarPanelOpen: sinon.stub().returns(false),
+      toggleSidebarPanel: sinon.stub(),
     };
     fakeUseRootThread = sinon.stub();
     stubTabCounts();

@@ -16,7 +16,7 @@ describe('bootstrap', () => {
     iframe.remove();
   });
 
-  function runBoot(app = 'annotator') {
+  function runBoot(app = 'annotator', { windowsManifestPaths = false } = {}) {
     const assetNames = [
       // Annotation layer
       'scripts/annotator.bundle.js',
@@ -36,7 +36,11 @@ describe('bootstrap', () => {
 
     const manifest = assetNames.reduce((manifest, path) => {
       const url = path.replace(/\.([a-z]+)$/, '.1234.$1');
-      manifest[path] = url;
+      const manifestPath = windowsManifestPaths
+        ? path.replace(/\//g, '\\')
+        : path;
+      const manifestUrl = windowsManifestPaths ? url.replace(/\//g, '\\') : url;
+      manifest[manifestPath] = manifestUrl;
       return manifest;
     }, {});
 
@@ -88,6 +92,18 @@ describe('bootstrap', () => {
       clock.tick(123); // Set timestamp used by module cache-busting fragment.
 
       runBoot('annotator');
+      const expectedAssets = [
+        { src: assetURL('scripts/annotator.bundle.1234.js'), type: 'script' },
+        { src: assetURL('styles/highlights.1234.css'), type: 'stylesheet' },
+      ];
+
+      assert.deepEqual(findAssets(iframe.contentDocument), expectedAssets);
+    });
+
+    it('loads assets when the manifest was generated with Windows paths', () => {
+      clock.tick(123); // Set timestamp used by module cache-busting fragment.
+
+      runBoot('annotator', { windowsManifestPaths: true });
       const expectedAssets = [
         { src: assetURL('scripts/annotator.bundle.1234.js'), type: 'script' },
         { src: assetURL('styles/highlights.1234.css'), type: 'stylesheet' },

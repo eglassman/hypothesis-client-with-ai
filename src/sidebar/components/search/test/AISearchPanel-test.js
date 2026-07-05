@@ -31,6 +31,7 @@ describe('AISearchPanel', () => {
     };
 
     fakeTagInventoryGroupSync = {
+      cachedGroupAnnotations: sinon.stub().returns(null),
       getGroupAnnotations: sinon.stub().resolves([]),
       runWithDeferredInventorySync: sinon.stub().callsFake(work => work()),
     };
@@ -79,9 +80,7 @@ describe('AISearchPanel', () => {
   }
 
   function refreshButton(wrapper) {
-    return wrapper.find(
-      'button[data-testid="ai-search-refresh-group-tags"]',
-    );
+    return wrapper.find('button[data-testid="ai-search-refresh-group-tags"]');
   }
 
   it('clears query text without closing the panel when clear is clicked', () => {
@@ -125,9 +124,27 @@ describe('AISearchPanel', () => {
 
   it('sorts visible history rows alphabetically by tag', () => {
     fakeStore.tagInventoryRows.returns([
-      { id: 'z', groupId: 'group-1', schemaTag: 'zeta', query: '', annotationIds: [] },
-      { id: 'a', groupId: 'group-1', schemaTag: 'alpha', query: '', annotationIds: [] },
-      { id: 'm', groupId: 'group-1', schemaTag: 'mu', query: '', annotationIds: [] },
+      {
+        id: 'z',
+        groupId: 'group-1',
+        schemaTag: 'zeta',
+        query: '',
+        annotationIds: [],
+      },
+      {
+        id: 'a',
+        groupId: 'group-1',
+        schemaTag: 'alpha',
+        query: '',
+        annotationIds: [],
+      },
+      {
+        id: 'm',
+        groupId: 'group-1',
+        schemaTag: 'mu',
+        query: '',
+        annotationIds: [],
+      },
     ]);
 
     const wrapper = createAISearchPanel();
@@ -137,8 +154,20 @@ describe('AISearchPanel', () => {
 
   it('hides rows that belong to other groups', () => {
     fakeStore.tagInventoryRows.returns([
-      { id: 'in', groupId: 'group-1', schemaTag: 'methods', query: '', annotationIds: [] },
-      { id: 'out', groupId: 'group-2', schemaTag: 'results', query: '', annotationIds: [] },
+      {
+        id: 'in',
+        groupId: 'group-1',
+        schemaTag: 'methods',
+        query: '',
+        annotationIds: [],
+      },
+      {
+        id: 'out',
+        groupId: 'group-2',
+        schemaTag: 'results',
+        query: '',
+        annotationIds: [],
+      },
     ]);
 
     const wrapper = createAISearchPanel();
@@ -195,12 +224,16 @@ describe('AISearchPanel', () => {
   });
 
   it('passes the resolved document URL to Claude when search is submitted', async () => {
-    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.mainFrame = sinon.stub().returns({
       uri: 'http://example.com/paper.pdf',
     });
+    fakeStore.searchUris.returns(['http://example.com/paper.pdf']);
     fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
     const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
       AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
     };
     const fakeToastMessenger = {
@@ -226,12 +259,14 @@ describe('AISearchPanel', () => {
 
     assert.calledWith(
       fakeClaude.AISearchDocument,
-      sinon.match({ documentUri: 'https://example.com/paper.pdf' }),
+      sinon.match({ documentUri: 'http://example.com/paper.pdf' }),
     );
   });
 
   it('retries with PDF bytes when Claude cannot download the document URL', async () => {
-    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
     fakeStore.searchUris = sinon
       .stub()
@@ -289,13 +324,16 @@ describe('AISearchPanel', () => {
   });
 
   it('passes the HTTPS PDF alias to Claude when the frame URI is a URN', async () => {
-    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
     fakeStore.searchUris = sinon
       .stub()
       .returns(['urn:x-pdf:abc', 'https://example.com/paper.pdf']);
     fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
     const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
       AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
     };
     const fakeToastMessenger = {
@@ -326,7 +364,9 @@ describe('AISearchPanel', () => {
   });
 
   it('calls getGroupAnnotations when rerun is triggered on a row', async () => {
-    fakeStore.profile = sinon.stub().returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.focusedGroupId.returns('group-1');
     fakeStore.searchUris.returns(['http://example.com/doc.pdf']);
     fakeStore.tagInventoryRows.returns([
@@ -370,21 +410,15 @@ describe('AISearchPanel', () => {
 
     const rerunButton = wrapper
       .find('button')
-      .filterWhere(
-        n =>
-          (n.prop('aria-label') || '').includes(
-            're-run the AI search',
-          ),
+      .filterWhere(n =>
+        (n.prop('aria-label') || '').includes('re-run the AI search'),
       );
 
     rerunButton.simulate('click');
     await Promise.resolve();
     await Promise.resolve();
 
-    assert.calledWith(
-      fakeTagInventoryGroupSync.getGroupAnnotations,
-      'group-1',
-    );
+    assert.calledWith(fakeTagInventoryGroupSync.getGroupAnnotations, 'group-1');
   });
 
   it('shows the refresh button for a private group even with no rows', () => {

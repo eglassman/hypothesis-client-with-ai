@@ -14,6 +14,7 @@ describe('setupTagPaletteSync', () => {
       {
         focusedGroupId: () => focusedGroupId,
         mainFrame: () => null,
+        defaultContentFrame: () => null,
         searchUris: () => [],
         savedAnnotations: () => [],
       },
@@ -102,11 +103,13 @@ describe('setupTagPaletteSync', () => {
     });
 
     assert.equal(frameSync.setTagHighlightPalette.callCount, 3);
-    assert.notProperty(frameSync.setTagHighlightPalette.getCall(1).args[0], 'topic');
-    assert.deepEqual(
-      frameSync.setTagHighlightPalette.getCall(1).args[1],
-      ['ann-1'],
+    assert.notProperty(
+      frameSync.setTagHighlightPalette.getCall(1).args[0],
+      'topic',
     );
+    assert.deepEqual(frameSync.setTagHighlightPalette.getCall(1).args[1], [
+      'ann-1',
+    ]);
     assert.propertyVal(
       frameSync.setTagHighlightPalette.getCall(2).args[0],
       'topic',

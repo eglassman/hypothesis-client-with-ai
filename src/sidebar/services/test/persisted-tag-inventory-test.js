@@ -1,3 +1,5 @@
+import { delay } from '@hypothesis/frontend-testing';
+
 import { createStore } from '../../store/create-store';
 import { framesModule } from '../../store/modules/frames';
 import {
@@ -72,10 +74,13 @@ describe('parseTagInventoryPersisted', () => {
       ],
       schemaTagColors: { t: 'rgba(0,0,0,0.38)' },
     };
-    assert.deepEqual(parseTagInventoryPersisted({ revision: 2, ...tagInventory }), {
-      revision: 2,
-      tagInventory,
-    });
+    assert.deepEqual(
+      parseTagInventoryPersisted({ revision: 2, ...tagInventory }),
+      {
+        revision: 2,
+        tagInventory,
+      },
+    );
   });
 
   it('accepts rows with hidden true and omits hidden when false', () => {
@@ -91,10 +96,13 @@ describe('parseTagInventoryPersisted', () => {
       ],
       schemaTagColors: {},
     };
-    assert.deepEqual(parseTagInventoryPersisted({ revision: 0, ...withHidden }), {
-      revision: 0,
-      tagInventory: withHidden,
-    });
+    assert.deepEqual(
+      parseTagInventoryPersisted({ revision: 0, ...withHidden }),
+      {
+        revision: 0,
+        tagInventory: withHidden,
+      },
+    );
 
     const withHiddenFalse = {
       rows: [
@@ -159,10 +167,13 @@ describe('parseTagInventoryPersisted', () => {
       ],
       schemaTagColors: {},
     };
-    assert.deepEqual(parseTagInventoryPersisted({ revision: 0, ...tagInventory }), {
-      revision: 0,
-      tagInventory,
-    });
+    assert.deepEqual(
+      parseTagInventoryPersisted({ revision: 0, ...tagInventory }),
+      {
+        revision: 0,
+        tagInventory,
+      },
+    );
   });
 
   it('returns null when documentUri is not a string', () => {
@@ -212,7 +223,6 @@ describe('parseExperimentLogState', () => {
     };
     assert.deepEqual(parseExperimentLogState(log), log);
   });
-
 });
 
 describe('PersistedTagInventoryService', () => {
@@ -224,9 +234,7 @@ describe('PersistedTagInventoryService', () => {
   let listeners;
 
   function triggerStorage(key, newValue) {
-    const storageEvent = new Event('storage');
-    storageEvent.key = key;
-    storageEvent.newValue = newValue;
+    const storageEvent = new StorageEvent('storage', { key, newValue });
     (listeners.storage || []).forEach(fn => fn(storageEvent));
   }
 
@@ -285,7 +293,14 @@ describe('PersistedTagInventoryService', () => {
       };
       const persisted = {
         revision: 4,
-        rows: [{ id: 'old-r1', schemaTag: 'methods', query: 'q1', annotationIds: ['a1'] }],
+        rows: [
+          {
+            id: 'old-r1',
+            schemaTag: 'methods',
+            query: 'q1',
+            annotationIds: ['a1'],
+          },
+        ],
         schemaTagColors: { methods: 'rgba(1,2,3,0.38)' },
       };
       fakeLocalStorage.getObject
@@ -294,7 +309,10 @@ describe('PersistedTagInventoryService', () => {
 
       createService().init();
 
-      assert.deepEqual(store.getState().sidebarPanels.tagInventory, tagInventory);
+      assert.deepEqual(
+        store.getState().sidebarPanels.tagInventory,
+        tagInventory,
+      );
     });
 
     it('does not hydrate when stored data is invalid', () => {
@@ -310,7 +328,9 @@ describe('PersistedTagInventoryService', () => {
     });
 
     it('persists when tagInventory changes after init', async () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
       createService().init();
 
       store.addTagInventoryRow({
@@ -322,18 +342,16 @@ describe('PersistedTagInventoryService', () => {
 
       await Promise.resolve();
 
-      assert.calledWith(
-        fakeLocalStorage.setObject,
-        TAG_INVENTORY_STORAGE_KEY,
-        {
-          revision: 1,
-          ...store.getState().sidebarPanels.tagInventory,
-        },
-      );
+      assert.calledWith(fakeLocalStorage.setObject, TAG_INVENTORY_STORAGE_KEY, {
+        revision: 1,
+        ...store.getState().sidebarPanels.tagInventory,
+      });
     });
 
     it('coalesces rapid tagInventory updates into one persist write', async () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
       createService().init();
 
       store.addTagInventoryRow({
@@ -358,11 +376,17 @@ describe('PersistedTagInventoryService', () => {
       fakeLocalStorage.getObject.returns(null);
       createService().init();
 
-      assert.calledWith(fakeWindow.addEventListener, 'storage', sinon.match.func);
+      assert.calledWith(
+        fakeWindow.addEventListener,
+        'storage',
+        sinon.match.func,
+      );
     });
 
     it('hydrates experiment log from localStorage when data is valid', () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
       const expLog = {
         version: 1,
         events: [
@@ -378,7 +402,9 @@ describe('PersistedTagInventoryService', () => {
           },
         ],
       };
-      fakeLocalStorage.getObject.withArgs(EXPERIMENT_LOG_STORAGE_KEY).returns(expLog);
+      fakeLocalStorage.getObject
+        .withArgs(EXPERIMENT_LOG_STORAGE_KEY)
+        .returns(expLog);
 
       createService().init();
 
@@ -449,27 +475,39 @@ describe('PersistedTagInventoryService', () => {
   });
 
   describe('when another tab updates storage', () => {
-    it('hydrates from storage event payload', () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+    it('hydrates from storage event payload', async () => {
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
 
       createService().init();
 
       const normalizedId = tagInventoryRowId('remote', 'rq', undefined);
       const next = {
         revision: 1,
-        rows: [{ id: 'old-x', schemaTag: 'remote', query: 'rq', annotationIds: [] }],
+        rows: [
+          { id: 'old-x', schemaTag: 'remote', query: 'rq', annotationIds: [] },
+        ],
         schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
       };
 
       triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(next));
+      await delay(300);
 
       assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
-        rows: [{ id: normalizedId, schemaTag: 'remote', query: 'rq', annotationIds: [] }],
+        rows: [
+          {
+            id: normalizedId,
+            schemaTag: 'remote',
+            query: 'rq',
+            annotationIds: [],
+          },
+        ],
         schemaTagColors: { remote: 'rgba(9,9,9,0.38)' },
       });
     });
 
-    it('hydrates experiment log from storage event payload', () => {
+    it('hydrates experiment log from storage event payload', async () => {
       fakeLocalStorage.getObject.returns(null);
 
       createService().init();
@@ -489,11 +527,12 @@ describe('PersistedTagInventoryService', () => {
       };
 
       triggerStorage(EXPERIMENT_LOG_STORAGE_KEY, JSON.stringify(next));
+      await delay(300);
 
       assert.deepEqual(store.getState().sidebarPanels.experimentLog, next);
     });
 
-    it('does not hydrate when payload matches current state', () => {
+    it('does not hydrate when payload matches current state', async () => {
       const initial = {
         revision: 0,
         rows: [],
@@ -505,15 +544,13 @@ describe('PersistedTagInventoryService', () => {
 
       sinon.spy(store, 'hydrateTagInventory');
 
-      triggerStorage(
-        TAG_INVENTORY_STORAGE_KEY,
-        JSON.stringify(initial),
-      );
+      triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(initial));
+      await delay(300);
 
       assert.notCalled(store.hydrateTagInventory);
     });
 
-    it('hydrates empty state when key is removed', () => {
+    it('hydrates empty state when key is removed', async () => {
       const persisted = {
         revision: 1,
         rows: [
@@ -531,6 +568,7 @@ describe('PersistedTagInventoryService', () => {
       createService().init();
 
       triggerStorage(TAG_INVENTORY_STORAGE_KEY, null);
+      await delay(300);
 
       assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
         rows: [],
@@ -538,8 +576,10 @@ describe('PersistedTagInventoryService', () => {
       });
     });
 
-    it('does not hydrate when storage revision is older than local', () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+    it('does not hydrate when storage revision is older than local', async () => {
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
 
       createService().init();
 
@@ -566,13 +606,19 @@ describe('PersistedTagInventoryService', () => {
       };
 
       triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(stale));
+      await delay(300);
 
       assert.notCalled(store.hydrateTagInventory);
-      assert.equal(store.getState().sidebarPanels.tagInventory.rows[0].id, 'r1');
+      assert.equal(
+        store.getState().sidebarPanels.tagInventory.rows[0].id,
+        'r1',
+      );
     });
 
-    it('hydrates when storage revision is newer than local', () => {
-      fakeLocalStorage.getObject.withArgs(TAG_INVENTORY_STORAGE_KEY).returns(null);
+    it('hydrates when storage revision is newer than local', async () => {
+      fakeLocalStorage.getObject
+        .withArgs(TAG_INVENTORY_STORAGE_KEY)
+        .returns(null);
 
       createService().init();
 
@@ -586,19 +632,34 @@ describe('PersistedTagInventoryService', () => {
       const normalizedRemoteId = tagInventoryRowId('a', 'b', undefined);
       const remote = {
         revision: 5,
-        rows: [{ id: 'old-remote', schemaTag: 'a', query: 'b', annotationIds: ['z'] }],
+        rows: [
+          {
+            id: 'old-remote',
+            schemaTag: 'a',
+            query: 'b',
+            annotationIds: ['z'],
+          },
+        ],
         schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
       };
 
       triggerStorage(TAG_INVENTORY_STORAGE_KEY, JSON.stringify(remote));
+      await delay(300);
 
       assert.deepEqual(store.getState().sidebarPanels.tagInventory, {
-        rows: [{ id: normalizedRemoteId, schemaTag: 'a', query: 'b', annotationIds: ['z'] }],
+        rows: [
+          {
+            id: normalizedRemoteId,
+            schemaTag: 'a',
+            query: 'b',
+            annotationIds: ['z'],
+          },
+        ],
         schemaTagColors: { a: 'rgba(1,1,1,0.38)' },
       });
     });
 
-    it('hydrates empty experiment log when key is removed', () => {
+    it('hydrates empty experiment log when key is removed', async () => {
       const persisted = {
         version: 1,
         events: [
@@ -624,6 +685,7 @@ describe('PersistedTagInventoryService', () => {
       createService().init();
 
       triggerStorage(EXPERIMENT_LOG_STORAGE_KEY, null);
+      await delay(300);
 
       assert.deepEqual(store.getState().sidebarPanels.experimentLog, {
         version: 1,

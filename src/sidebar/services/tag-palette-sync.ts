@@ -1,16 +1,20 @@
-import { resolveDocumentUriFromCandidates, documentUriAliases, filterSavedAnnotationsForDocument } from '../helpers/document-uri';
+import {
+  resolveDocumentUriFromCandidates,
+  documentUriAliases,
+  filterSavedAnnotationsForDocument,
+} from '../helpers/document-uri';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { isTagInventoryRowVisibleInScope } from '../helpers/tag-inventory-group';
 import {
   computeTagInventoryHighlightState,
   mergeVisibleTagHighlightPalette,
 } from '../helpers/tag-palette';
-import type { TagInventoryRow } from '../store/modules/sidebar-panels';
-import type { FrameSyncService } from './frame-sync';
 import type { SidebarStore } from '../store';
+import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import { watch } from '../util/watch';
+import type { FrameSyncService } from './frame-sync';
 
-let lastPalettePushSignature: string | null = null;
+const lastPalettePushSignatures = new WeakMap<FrameSyncService, string>();
 
 function savedAnnotationSignature(
   store: Pick<SidebarStore, 'savedAnnotations'>,
@@ -27,7 +31,9 @@ export function pushTagPalette(
 ) {
   const tagInventory = store.getState().sidebarPanels.tagInventory;
   const focusedGroupId = store.focusedGroupId();
-  const docUri = resolveDocumentUriFromCandidates(store, [...documentUriAliases(store)]);
+  const docUri = resolveDocumentUriFromCandidates(store, [
+    ...documentUriAliases(store),
+  ]);
   const uriAliases = documentUriAliases(store);
   const annotations =
     focusedGroupId === PUBLIC_GROUP_ID
@@ -37,9 +43,7 @@ export function pushTagPalette(
           uriAliases,
         )
       : focusedGroupId
-        ? store
-            .savedAnnotations()
-            .filter(ann => ann.group === focusedGroupId)
+        ? store.savedAnnotations().filter(ann => ann.group === focusedGroupId)
         : [];
 
   // Only the focused group's visible rows contribute highlight colors, so the
@@ -80,10 +84,10 @@ export function pushTagPalette(
     hidden: [...hiddenAnnotationIds].sort(),
     annSig: savedAnnotationSignature(store),
   });
-  if (signature === lastPalettePushSignature) {
+  if (signature === lastPalettePushSignatures.get(frameSync)) {
     return;
   }
-  lastPalettePushSignature = signature;
+  lastPalettePushSignatures.set(frameSync, signature);
 
   frameSync.setTagHighlightPalette(palette, hiddenAnnotationIds);
 }
