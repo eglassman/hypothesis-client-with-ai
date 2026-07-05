@@ -22,6 +22,8 @@ function savedAnnotationSignature(
   return store
     .savedAnnotations()
     .map(ann => ann.id ?? '')
+    .filter((id): id is string => Boolean(id))
+    .sort()
     .join('\n');
 }
 
@@ -82,7 +84,6 @@ export function pushTagPalette(
     docUri,
     palette: Object.entries(palette).sort(([a], [b]) => a.localeCompare(b)),
     hidden: [...hiddenAnnotationIds].sort(),
-    annSig: savedAnnotationSignature(store),
   });
   if (signature === lastPalettePushSignatures.get(frameSync)) {
     return;

@@ -1134,12 +1134,13 @@ export class Guest
         return;
       }
 
+      const colorTags = tagsForHighlightColors(anchor.annotation?.tags);
       let highlights;
       if (region instanceof Range) {
         highlights = this._highlighter.highlightRange(
           region,
           anchor.annotation?.$cluster /* cssClass */,
-          tagsForHighlightColors(anchor.annotation?.tags),
+          colorTags,
         ) as AnnotationHighlight[];
       } else {
         highlights = this._highlighter.highlightShape(

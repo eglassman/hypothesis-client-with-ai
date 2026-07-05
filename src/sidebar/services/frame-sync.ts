@@ -21,7 +21,7 @@ import type {
   DocumentInfo,
   RenderToBitmapOptions,
 } from '../../types/annotator';
-import type { Annotation } from '../../types/api';
+import type { Annotation, Selector, TextQuoteSelector } from '../../types/api';
 import { mapHiddenAnnotationIdsToGuestTags } from '../helpers/hidden-annotation-guest-tags';
 import {
   SidebarToHostCalls,
@@ -78,11 +78,71 @@ export function formatAnnot({
   };
 }
 
+function textQuoteAnchoringKey(
+  selectors: Selector[] | undefined,
+): { exact: string; prefix?: string; suffix?: string } | null {
+  const quote = selectors?.find(s => s.type === 'TextQuoteSelector') as
+    | TextQuoteSelector
+    | undefined;
+  if (!quote) {
+    return null;
+  }
+  return { exact: quote.exact, prefix: quote.prefix, suffix: quote.suffix };
+}
+
+/**
+ * Return true when a geometry selector changed on both sides (not merely added).
+ * Location enrichment often adds PageSelector/TextPositionSelector after the
+ * highlight is already painted; those additions must not re-anchor the guest.
+ */
+function geometrySelectorChanged(
+  previous: Selector[] | undefined,
+  current: Selector[] | undefined,
+  type: Selector['type'],
+): boolean {
+  const prev = previous?.find(s => s.type === type);
+  const curr = current?.find(s => s.type === type);
+  if (!prev || !curr) {
+    return false;
+  }
+  return !shallowEqual(prev, curr);
+}
+
 function formattedAnnotationChanged(
   previous: Annotation,
   current: Annotation,
 ): boolean {
-  return !shallowEqual(formatAnnot(previous), formatAnnot(current));
+  const prev = formatAnnot(previous);
+  const curr = formatAnnot(current);
+  if (prev.uri !== curr.uri || prev.$cluster !== curr.$cluster) {
+    return true;
+  }
+  if (!shallowEqual(prev.tags, curr.tags)) {
+    return true;
+  }
+
+  const prevSelectors = previous.target?.[0]?.selector;
+  const currSelectors = current.target?.[0]?.selector;
+  if (
+    !shallowEqual(
+      textQuoteAnchoringKey(prevSelectors),
+      textQuoteAnchoringKey(currSelectors),
+    )
+  ) {
+    return true;
+  }
+
+  for (const type of [
+    'TextPositionSelector',
+    'RangeSelector',
+    'ShapeSelector',
+  ] as const) {
+    if (geometrySelectorChanged(prevSelectors, currSelectors, type)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

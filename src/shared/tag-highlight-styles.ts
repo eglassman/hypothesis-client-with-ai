@@ -8,14 +8,6 @@ import { highlightTagClass } from './highlight-tag-class';
 
 const STYLE_ID = 'hypothesis-dynamic-tag-highlight-rules';
 
-function normalizePDFHighlightCompositing(targetDocument: Document): void {
-  for (const layer of targetDocument.querySelectorAll(
-    '.hypothesis-highlight-layer, .hypothesis-tag-highlight-layer',
-  )) {
-    (layer as SVGElement).style.mixBlendMode = 'normal';
-  }
-}
-
 /**
  * Portion of `--highlight-color` mixed with black for `--highlight-color-focused`
  * (darker when selected / easier to see on light PDFs). Higher → closer to base;
@@ -70,10 +62,7 @@ export function applyTagHighlightPalette(
   }
   const css = lines.join('\n');
   if (style.textContent === css) {
-    normalizePDFHighlightCompositing(targetDocument);
     return;
   }
   style.textContent = css;
-
-  normalizePDFHighlightCompositing(targetDocument);
 }

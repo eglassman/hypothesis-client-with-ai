@@ -166,12 +166,9 @@ function SidebarTabs({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [
-    initialLoadLocationReady,
-    isAnnotationFetchComplete,
-    isWaitingForLocationEnrichment,
-    store,
-  ]);
+    // Do not depend on `isWaitingForLocationEnrichment`: each enrichment tick
+    // would reset this timer and leave the loading gate stuck indefinitely.
+  }, [initialLoadLocationReady, isAnnotationFetchComplete, store]);
 
   const selectTab = (tabId: TabName) => {
     store.selectTab(tabId);
@@ -220,13 +217,12 @@ function SidebarTabs({
       <div aria-live="polite" role="status" className="sr-only">
         {tabCountsSummary}
       </div>
-      {!isAISearchOpen && (
-        <div
-          className={classnames(
-            // 9px balances out the space above the tabs
-            'space-y-3 pb-[9px]',
-          )}
-        >
+      <div
+        className={classnames(
+          // 9px balances out the space above the tabs
+          'space-y-3 pb-[9px]',
+        )}
+      >
           {!isGroupTabOpen && <div className="flex gap-x-6 theme-clean:ml-[15px] mt-1" role="tablist">
             {!settings.commentsMode && (
               <Tab
@@ -360,7 +356,6 @@ function SidebarTabs({
             </div>
           )}
         </div>
-      )}
     </>
   );
 }

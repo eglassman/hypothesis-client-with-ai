@@ -281,21 +281,20 @@ function drawHighlightsAbovePDFCanvas(
     return;
   }
 
-  const canvasParent = canvasEl.parentElement;
-  let svgHighlightLayer =
-    (canvasParent.querySelector(
-      '.hypothesis-highlight-layer',
-    ) as SVGSVGElement | null) ??
-    (canvasParent.querySelector(
-      '.hypothesis-tag-highlight-layer',
-    ) as SVGSVGElement | null);
+  let svgHighlightLayer = canvasEl.parentElement.querySelector(
+    '.hypothesis-highlight-layer',
+  ) as SVGSVGElement | null;
 
   if (!svgHighlightLayer) {
+    // Create SVG layer. This must be in the same stacking context as
+    // the canvas so that CSS `mix-blend-mode` can be used to control how SVG
+    // content blends with the canvas below.
     svgHighlightLayer = document.createElementNS(SVG_NAMESPACE, 'svg');
     svgHighlightLayer.setAttribute('class', 'hypothesis-highlight-layer');
-    canvasParent.appendChild(svgHighlightLayer);
+    canvasEl.parentElement.appendChild(svgHighlightLayer);
 
-    canvasParent.style.position = 'relative';
+    // Overlay SVG layer above canvas.
+    canvasEl.parentElement.style.position = 'relative';
 
     const svgStyle = svgHighlightLayer.style;
     svgStyle.position = 'absolute';
@@ -303,11 +302,14 @@ function drawHighlightsAbovePDFCanvas(
     svgStyle.top = '0';
     svgStyle.width = '100%';
     svgStyle.height = '100%';
-  }
 
-  // Standard alpha compositing is stable when differently-colored translucent
-  // highlights overlap. `multiply` causes compositor flicker in those regions.
-  svgHighlightLayer.style.mixBlendMode = 'normal';
+    // Use multiply blending so that highlights drawn on top of text darken it
+    // rather than making it lighter. This improves contrast and thus readability
+    // of highlighted text, especially for overlapping highlights.
+    //
+    // This choice optimizes for the common case of dark text on a light background.
+    svgStyle.mixBlendMode = 'multiply';
+  }
 
   const canvasRect = canvasEl.getBoundingClientRect();
   const highlightRects = highlightEls.map(highlightEl => {
@@ -441,12 +443,18 @@ function replaceWith(node: ChildNode, replacements: Node[]) {
 /**
  * Focus or un-focus an individual SVG highlight element.
  *
- * Focus styling is applied in-place via `data-is-focused` so SVG stacking
- * order stays stable. Visual emphasis uses CSS stroke (not fill) so overlap
- * regions do not flicker.
+ * When focusing an SVG highlight, make sure it is not obscured by other SVG
+ * highlight elements. As SVG highlights are siblings, this can be accomplished
+ * by putting the highlight at the end the set of highlights contained its
+ * parent. SVG highlight elements are cloned instead of moved so that their
+ * original stacking (nesting) order is not lost when later unfocused. A data
+ * attribute is added to associate the original SVG highlight element with its
+ * clone.
  */
 function setSVGHighlightFocused(svgEl: SVGElement, focused: boolean) {
   const parent = svgEl.parentNode as SVGElement;
+  // This attribute allows lookup of an associated, "focused" element. It is
+  // set if the highlight is already focused.
   const focusedId = svgEl.getAttribute('data-focused-id');
 
   const isFocused = Boolean(focusedId);
@@ -458,25 +466,41 @@ function setSVGHighlightFocused(svgEl: SVGElement, focused: boolean) {
     const focusedID = generateHexString(8);
     const associatedHighlights = associatedSVGHighlights(svgEl);
     const sourceHighlights = associatedHighlights.filter(
-      el => !el.classList.contains('hypothesis-svg-highlight-focus-tint'),
+      el => !el.hasAttribute('data-is-focused'),
     );
 
     sourceHighlights.forEach(source => {
       source.setAttribute('data-focused-id', focusedID);
-      source.setAttribute('data-is-focused', 'data-is-focused');
+
+      const focusedHighlight = source.cloneNode() as SVGElement;
+      focusedHighlight.setAttribute('data-focused-id', focusedID);
+      focusedHighlight.setAttribute('data-is-focused', 'data-is-focused');
+      parent.append(focusedHighlight);
     });
-  } else {
-    if (!focusedId) {
-      return;
+
+    // In multi-tag PDF overlays, we darken after blending by adding a
+    // translucent black tint overlay above all focused tag layers.
+    if (
+      sourceHighlights.some(el =>
+        el.classList.contains('hypothesis-svg-highlight-overlay'),
+      )
+    ) {
+      const focusedTint = svgEl.cloneNode() as SVGElement;
+      focusedTint.setAttribute('class', 'hypothesis-svg-highlight-focus-tint');
+      focusedTint.setAttribute('data-highlight-id', highlightID(svgEl) ?? '');
+      focusedTint.setAttribute('data-focused-id', focusedID);
+      focusedTint.setAttribute('data-is-focused', 'data-is-focused');
+      parent.append(focusedTint);
     }
-    parent.querySelectorAll(`[data-focused-id="${focusedId}"]`).forEach(el => {
-      if (el.classList.contains('hypothesis-svg-highlight-focus-tint')) {
-        el.remove();
-      } else {
-        el.removeAttribute('data-is-focused');
-        el.removeAttribute('data-focused-id');
-      }
-    });
+  } else {
+    const focusedHighlights = parent.querySelectorAll(
+      `[data-focused-id="${focusedId}"][data-is-focused]`,
+    );
+    focusedHighlights.forEach(focusedHighlight => focusedHighlight.remove());
+
+    associatedSVGHighlights(svgEl).forEach(highlight =>
+      highlight.removeAttribute('data-focused-id'),
+    );
   }
 }
 
@@ -505,6 +529,9 @@ function setHighlightsFocused(
   focused: boolean,
 ) {
   highlights.forEach(h => {
+    // In PDFs the visible highlight is created by an SVG element, so the focused
+    // effect is applied to that. In other documents the effect is applied to the
+    // `<hypothesis-highlight>` element.
     if (h.svgHighlight) {
       setSVGHighlightFocused(h.svgHighlight, focused);
     } else {
@@ -680,18 +707,15 @@ function getHighlights(element: Element) {
 function getSVGHighlights(root?: Element): Map<Element, HighlightElement[]> {
   const svgHighlights: Map<Element, HighlightElement[]> = new Map();
 
-  for (const layerClass of [
+  for (const layer of (root ?? document).getElementsByClassName(
     'hypothesis-highlight-layer',
-    'hypothesis-tag-highlight-layer',
-  ]) {
-    for (const layer of (root ?? document).getElementsByClassName(layerClass)) {
-      svgHighlights.set(
-        layer,
-        Array.from(
-          layer.querySelectorAll('.hypothesis-svg-highlight'),
-        ) as HighlightElement[],
-      );
-    }
+  )) {
+    svgHighlights.set(
+      layer,
+      Array.from(
+        layer.querySelectorAll('.hypothesis-svg-highlight'),
+      ) as HighlightElement[],
+    );
   }
 
   return svgHighlights;

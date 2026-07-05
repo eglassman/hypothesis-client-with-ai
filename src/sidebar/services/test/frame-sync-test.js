@@ -602,6 +602,40 @@ describe('FrameSyncService', () => {
       );
     });
 
+    it('does not re-send when only location selectors are enriched', async () => {
+      const frameInfo = fixtures.htmlDocumentInfo;
+      await connectGuest();
+      emitGuestEvent('documentInfoChanged', frameInfo);
+
+      const before = {
+        ...fixtures.ann,
+        id: 'a1',
+        tags: ['tag-a', 'tag-b'],
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      const after = {
+        ...before,
+        target: [
+          {
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      fakeStore.setState({ annotations: [before] });
+      guestRPC().call.resetHistory();
+
+      fakeStore.setState({ annotations: [after] });
+
+      assert.isFalse(guestRPC().call.calledWith('loadAnnotations'));
+    });
+
     it('does not send a "loadAnnotations" message for replies', async () => {
       await connectGuest();
 
