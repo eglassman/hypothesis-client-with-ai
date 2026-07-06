@@ -116,7 +116,7 @@ export class NodeLinkStateService {
   ): Promise<Annotation[]> {
     const annotations: Annotation[] = [];
 
-    if (groupId === PUBLIC_GROUP_ID) {
+    if (options.uri || groupId === PUBLIC_GROUP_ID) {
       if (!options.uri) {
         return annotations;
       }

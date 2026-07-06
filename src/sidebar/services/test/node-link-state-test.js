@@ -191,6 +191,47 @@ describe('NodeLinkStateService', () => {
     );
   });
 
+  it('fetches document-scoped private-group annotations with search', async () => {
+    fakeApi.search.resolves({
+      rows: [
+        {
+          ...fixtures.defaultAnnotation(),
+          id: 'private-ann',
+          group: 'group-a',
+          uri: 'https://example.com/doc',
+          tags: ['Character'],
+        },
+        stateAnnotation({
+          id: 'state-ann',
+          group: 'group-a',
+          uri: nodeLinkStateUri('group-a'),
+        }),
+      ],
+      total: 2,
+    });
+
+    const annotations = await service.fetchGroupAnnotations(
+      'group-a',
+      undefined,
+      { uri: 'https://example.com/doc' },
+    );
+
+    assert.calledWith(
+      fakeApi.search,
+      sinon.match({
+        group: 'group-a',
+        uri: 'https://example.com/doc',
+        limit: 100,
+        offset: 0,
+      }),
+    );
+    assert.notCalled(fakeApi.group.annotations.read);
+    assert.deepEqual(
+      annotations.map(ann => ann.id),
+      ['private-ann'],
+    );
+  });
+
   it('fetches Public-group annotations with search instead of the group annotations endpoint', async () => {
     fakeApi.search.resolves({
       rows: [
