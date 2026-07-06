@@ -15,6 +15,20 @@ export type FewShotExampleRow = {
   quote: string;
 };
 
+export type TagReferencePromptEntry = {
+  tag: string;
+  annotationCount: number;
+  descriptive: boolean;
+  outgoingRelationships: Array<{
+    relationship: string;
+    targetTag: string;
+  }>;
+  incomingRelationships: Array<{
+    sourceTag: string;
+    relationship: string;
+  }>;
+};
+
 export type TagSet = 'A' | 'B';
 
 type CandidateRow = {
@@ -63,7 +77,7 @@ export function buildCandidateRows(
     }
 
     const q = quote(ann);
-    if (q == null || !q.trim()) {
+    if (q === null || q === undefined || !q.trim()) {
       continue;
     }
 
@@ -245,7 +259,7 @@ export function collectNegativeExamplesFromAnnotations(
       continue;
     }
     const q = quote(ann);
-    if (q == null || !norm(q)) {
+    if (q === null || q === undefined || !norm(q)) {
       continue;
     }
     for (const tag of negativeSchemaTags(ann.tags ?? [])) {
@@ -308,7 +322,7 @@ function existingAnnotationCoversAiQuote(
       continue;
     }
     const q = quote(ann);
-    if (q == null || !norm(q)) {
+    if (q === null || q === undefined || !norm(q)) {
       continue;
     }
     if (norm(q) !== normalizedQuoteText) {
@@ -619,9 +633,21 @@ export function buildClaudeAISearchUserMessage(params: {
   schemaTag: string;
   searchQuery: string;
   negativeExamples?: FewShotExampleRow[];
+  tagReference?: TagReferencePromptEntry[];
 }): string {
-  const { positiveExamples, schemaTag, searchQuery, negativeExamples } = params;
+  const {
+    positiveExamples,
+    schemaTag,
+    searchQuery,
+    negativeExamples,
+    tagReference,
+  } = params;
   let body = '';
+  if (tagReference?.length) {
+    body +=
+      'Tag reference for the selected group. This includes all known tags and manual tag-tag relationships; use it to interpret tag meanings and related tags when selecting quotes:\n';
+    body += `${JSON.stringify(tagReference, null, 2)}\n\n`;
+  }
   if (positiveExamples.length > 0) {
     body += EXAMPLES_HEADER;
     for (const row of positiveExamples) {

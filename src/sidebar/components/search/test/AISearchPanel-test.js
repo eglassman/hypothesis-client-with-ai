@@ -1,13 +1,24 @@
 import { mockImportedComponents } from '@hypothesis/frontend-testing';
 import { mount } from '@hypothesis/frontend-testing';
 
-import { rowDescriptorKey } from '../../../helpers/tag-inventory-group';
 import AISearchPanel, { $imports } from '../AISearchPanel';
 
 describe('AISearchPanel', () => {
   let fakeStore;
   let fakeTagInventoryGroupSync;
   let fakePersistedTagInventory;
+  let fakeNodeLinkState;
+
+  function nodeLinkState(overrides = {}) {
+    return {
+      schemaVersion: 1,
+      updatedAt: null,
+      selectedGroupId: 'group-1',
+      descriptiveTags: [],
+      tagEdges: [],
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     fakeStore = {
@@ -40,6 +51,10 @@ describe('AISearchPanel', () => {
       runWithDeferredPersist: sinon.stub().callsFake(work => work()),
     };
 
+    fakeNodeLinkState = {
+      loadState: sinon.stub().resolves({ state: nodeLinkState() }),
+    };
+
     $imports.$mock(mockImportedComponents());
     $imports.$mock({
       '../../store': {
@@ -60,6 +75,7 @@ describe('AISearchPanel', () => {
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
         claude={{}}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={{}}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}
@@ -208,6 +224,7 @@ describe('AISearchPanel', () => {
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
         claude={fakeClaude}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}
@@ -249,6 +266,7 @@ describe('AISearchPanel', () => {
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
         claude={fakeClaude}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}
@@ -261,6 +279,71 @@ describe('AISearchPanel', () => {
       fakeClaude.AISearchDocument,
       sinon.match({ documentUri: 'http://example.com/paper.pdf' }),
     );
+  });
+
+  it('includes the selected group tag reference in the Claude prompt', async () => {
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({
+      uri: 'http://example.com/paper.pdf',
+    });
+    fakeStore.searchUris.returns(['http://example.com/paper.pdf']);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    fakeTagInventoryGroupSync.getGroupAnnotations.resolves([
+      {
+        id: 'ann-1',
+        group: 'group-1',
+        tags: ['Methods'],
+        text: '',
+        target: [],
+      },
+    ]);
+    fakeNodeLinkState.loadState.resolves({
+      state: nodeLinkState({
+        descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
+        tagEdges: [
+          {
+            sourceTag: 'Methods',
+            targetTag: 'Theme',
+            connectionType: 'supports',
+          },
+        ],
+      }),
+    });
+    const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
+      AISearchDocument: sinon.stub().rejects(new Error('stop after claude')),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={{ setTagHighlightPalette: sinon.stub() }}
+        claude={fakeClaude}
+        api={{}}
+        nodeLinkState={fakeNodeLinkState}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    const prompt = fakeClaude.AISearchDocument.firstCall.args[0].query;
+    assert.calledWith(fakeNodeLinkState.loadState, 'group-1');
+    assert.include(prompt, 'Tag reference for the selected group');
+    assert.include(prompt, '"tag": "Methods"');
+    assert.include(prompt, '"annotationCount": 1');
+    assert.include(prompt, '"targetTag": "Theme"');
+    assert.include(prompt, '"relationship": "supports"');
   });
 
   it('retries with PDF bytes when Claude cannot download the document URL', async () => {
@@ -301,6 +384,7 @@ describe('AISearchPanel', () => {
         frameSync={fakeFrameSync}
         claude={fakeClaude}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}
@@ -349,6 +433,7 @@ describe('AISearchPanel', () => {
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
         claude={fakeClaude}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}
@@ -402,6 +487,7 @@ describe('AISearchPanel', () => {
         frameSync={{ setTagHighlightPalette: sinon.stub() }}
         claude={fakeClaude}
         api={{}}
+        nodeLinkState={fakeNodeLinkState}
         toastMessenger={fakeToastMessenger}
         tagInventoryGroupSync={fakeTagInventoryGroupSync}
         persistedTagInventory={fakePersistedTagInventory}

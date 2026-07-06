@@ -111,6 +111,35 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       );
     });
 
+    it('prepends tag reference data when provided', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [],
+        schemaTag: 's',
+        searchQuery: 'q',
+        tagReference: [
+          {
+            tag: 'Methods',
+            annotationCount: 2,
+            descriptive: false,
+            outgoingRelationships: [
+              { relationship: 'supports', targetTag: 'Finding' },
+            ],
+            incomingRelationships: [],
+          },
+        ],
+      });
+      const referenceIdx = out.indexOf('Tag reference for the selected group');
+      const questionIdx = out.indexOf(
+        'What retrieved verbatim quotes from the document',
+      );
+
+      assert.isAtLeast(referenceIdx, 0);
+      assert.isBelow(referenceIdx, questionIdx);
+      assert.include(out, '"tag": "Methods"');
+      assert.include(out, '"annotationCount": 2');
+      assert.include(out, '"targetTag": "Finding"');
+    });
+
     it('appends negative examples after positives when both present', () => {
       const out = buildClaudeAISearchUserMessage({
         positiveExamples: [{ tag: 't', query: 'q1', quote: 'v' }],

@@ -49,6 +49,10 @@ import {
   listAnnotationsForTagInventoryRow,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
+import {
+  emptyNodeLinkState,
+  tagReferenceForNodeLinkState,
+} from '../../node-link/graph-state';
 import { withServices } from '../../service-context';
 import type { AnnotationsService } from '../../services/annotations';
 import type { APIService } from '../../services/api';
@@ -59,6 +63,7 @@ import {
 } from '../../services/claude';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { FrameSyncService } from '../../services/frame-sync';
+import type { NodeLinkStateService } from '../../services/node-link-state';
 import type { PersistedTagInventoryService } from '../../services/persisted-tag-inventory';
 import type { TagInventoryGroupSyncService } from '../../services/tag-inventory-group-sync';
 import { savedAnnotationsForCurrentDocument } from '../../services/tag-inventory-group-sync';
@@ -170,6 +175,7 @@ type AISearchPanelProps = {
   frameSync: FrameSyncService;
   claude: ClaudeService;
   api: APIService;
+  nodeLinkState: NodeLinkStateService;
   toastMessenger: ToastMessengerService;
   tagInventoryGroupSync: TagInventoryGroupSyncService;
   persistedTagInventory: PersistedTagInventoryService;
@@ -181,6 +187,7 @@ function AISearchPanel({
   frameSync,
   claude,
   api,
+  nodeLinkState,
   toastMessenger,
   tagInventoryGroupSync,
   persistedTagInventory,
@@ -274,7 +281,13 @@ function AISearchPanel({
       }
     }
     return [...byId.values()];
-  }, [savedAnnotations, focusedGroupId, isPublicGroup, tagInventoryGroupSync]);
+  }, [
+    savedAnnotations,
+    focusedGroupId,
+    isPublicGroup,
+    tagInventoryGroupSync,
+    uriAliases,
+  ]);
   const hasAnyHiddenRows = useMemo(
     () => scopedRows.some(r => r.hidden === true),
     [scopedRows],
@@ -416,12 +429,29 @@ function AISearchPanel({
       );
       const negativeExamples =
         collectNegativeExamplesFromAnnotations(fewShotAnnotations);
+      let nodeLinkSemanticState = emptyNodeLinkState({
+        selectedGroupId: groupId,
+      });
+      try {
+        nodeLinkSemanticState = (await nodeLinkState.loadState(groupId)).state;
+      } catch (error) {
+        console.warn(
+          'Failed to load tag reference for AI search; continuing with annotation tags only:',
+          error,
+        );
+      }
+      const tagReference = tagReferenceForNodeLinkState(
+        nodeLinkSemanticState,
+        fewShotAnnotations,
+        groupId,
+      );
       const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({
         positiveExamples,
         schemaTag: tagTrim,
         searchQuery: query,
         negativeExamples,
+        tagReference,
       });
 
       const claudeRun = registerClaudeRun();
@@ -1392,6 +1422,7 @@ export default withServices(AISearchPanel, [
   'frameSync',
   'claude',
   'api',
+  'nodeLinkState',
   'toastMessenger',
   'tagInventoryGroupSync',
   'persistedTagInventory',
