@@ -628,6 +628,24 @@ export function formatFewShotExampleLine(
   return `- tag: ${tag}\n  query: ${query}\n  quote: ${quoteText}\n`;
 }
 
+function formatTagReferenceLine(entry: TagReferencePromptEntry): string {
+  const flags = [`count=${entry.annotationCount}`];
+  if (entry.descriptive) {
+    flags.push('descriptive');
+  }
+  const relationships = [
+    ...entry.outgoingRelationships.map(
+      rel => `-> ${rel.relationship} ${rel.targetTag}`,
+    ),
+    ...entry.incomingRelationships.map(
+      rel => `<- ${rel.sourceTag} ${rel.relationship}`,
+    ),
+  ];
+  return `- ${entry.tag} [${flags.join(', ')}]: ${
+    relationships.length ? relationships.join('; ') : 'none'
+  }\n`;
+}
+
 export function buildClaudeAISearchUserMessage(params: {
   positiveExamples: FewShotExampleRow[];
   schemaTag: string;
@@ -645,8 +663,11 @@ export function buildClaudeAISearchUserMessage(params: {
   let body = '';
   if (tagReference?.length) {
     body +=
-      'Tag reference for the selected group. This includes all known tags and manual tag-tag relationships; use it to interpret tag meanings and related tags when selecting quotes:\n';
-    body += `${JSON.stringify(tagReference, null, 2)}\n\n`;
+      'Tag reference (selected group; count=matching group annotations; arrows=manual relationships):\n';
+    for (const entry of tagReference) {
+      body += formatTagReferenceLine(entry);
+    }
+    body += '\n';
   }
   if (positiveExamples.length > 0) {
     body += EXAMPLES_HEADER;

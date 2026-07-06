@@ -339,11 +339,13 @@ describe('AISearchPanel', () => {
 
     const prompt = fakeClaude.AISearchDocument.firstCall.args[0].query;
     assert.calledWith(fakeNodeLinkState.loadState, 'group-1');
-    assert.include(prompt, 'Tag reference for the selected group');
-    assert.include(prompt, '"tag": "Methods"');
-    assert.include(prompt, '"annotationCount": 1');
-    assert.include(prompt, '"targetTag": "Theme"');
-    assert.include(prompt, '"relationship": "supports"');
+    assert.include(prompt, 'Tag reference (selected group');
+    assert.include(prompt, '- Methods [count=1]: -> supports Theme');
+    assert.include(
+      prompt,
+      '- Theme [count=0, descriptive]: <- Methods supports',
+    );
+    assert.notInclude(prompt, '"outgoingRelationships"');
   });
 
   it('retries with PDF bytes when Claude cannot download the document URL', async () => {

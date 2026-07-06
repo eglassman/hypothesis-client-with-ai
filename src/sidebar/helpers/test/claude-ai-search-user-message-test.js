@@ -111,7 +111,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       );
     });
 
-    it('prepends tag reference data when provided', () => {
+    it('prepends compact tag reference data when provided', () => {
       const out = buildClaudeAISearchUserMessage({
         positiveExamples: [],
         schemaTag: 's',
@@ -128,16 +128,15 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
           },
         ],
       });
-      const referenceIdx = out.indexOf('Tag reference for the selected group');
+      const referenceIdx = out.indexOf('Tag reference (selected group');
       const questionIdx = out.indexOf(
         'What retrieved verbatim quotes from the document',
       );
 
       assert.isAtLeast(referenceIdx, 0);
       assert.isBelow(referenceIdx, questionIdx);
-      assert.include(out, '"tag": "Methods"');
-      assert.include(out, '"annotationCount": 2');
-      assert.include(out, '"targetTag": "Finding"');
+      assert.include(out, '- Methods [count=2]: -> supports Finding\n');
+      assert.notInclude(out, '"outgoingRelationships"');
     });
 
     it('appends negative examples after positives when both present', () => {
