@@ -35,6 +35,7 @@ export function extensionNodeLinkUrl(href = window.location.href) {
     return null;
   }
   const appUrl = new URL('app.html', url);
+  appUrl.hash = url.hash;
   appUrl.searchParams.set('route', 'nodeLink');
   return appUrl.toString();
 }
