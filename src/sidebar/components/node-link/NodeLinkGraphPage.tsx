@@ -99,6 +99,16 @@ function canonicalGroupId(groupId: string, groups: Group[]) {
   return findGroupByIdentifier(groupId, groups)?.id || groupId;
 }
 
+export function routeGroupToApply(
+  canonicalRouteGroup: string,
+  appliedRouteGroup: string,
+) {
+  if (canonicalRouteGroup && canonicalRouteGroup !== appliedRouteGroup) {
+    return canonicalRouteGroup;
+  }
+  return '';
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -1598,7 +1608,7 @@ export function NodeLinkEditor({
   );
 }
 
-function NodeLinkGraphPage({
+export function NodeLinkGraphPage({
   auth,
   nodeLinkState,
   session,
@@ -1637,12 +1647,18 @@ function NodeLinkGraphPage({
     loadKey: string;
   } | null>(null);
   const loadedGraphRef = useRef('');
+  const appliedRouteGroupRef = useRef(canonicalRouteGroup);
 
   useEffect(() => {
-    if (canonicalRouteGroup && canonicalRouteGroup !== selectedGroupId) {
-      setSelectedGroupId(canonicalRouteGroup);
+    const nextRouteGroup = routeGroupToApply(
+      canonicalRouteGroup,
+      appliedRouteGroupRef.current,
+    );
+    if (nextRouteGroup) {
+      appliedRouteGroupRef.current = nextRouteGroup;
+      setSelectedGroupId(nextRouteGroup);
     }
-  }, [canonicalRouteGroup, selectedGroupId]);
+  }, [canonicalRouteGroup]);
 
   useEffect(() => {
     if (!selectedGroupId && fallbackGroupId) {
