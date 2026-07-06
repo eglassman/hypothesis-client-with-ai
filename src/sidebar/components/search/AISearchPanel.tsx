@@ -444,7 +444,6 @@ function AISearchPanel({
         nodeLinkSemanticState,
         fewShotAnnotations,
         groupId,
-        { includeDescriptiveTags: false },
       );
       const tagTrim = schemaTagForRow.trim();
       const fullUserMessage = buildClaudeAISearchUserMessage({

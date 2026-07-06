@@ -664,6 +664,8 @@ export function buildClaudeAISearchUserMessage(params: {
   if (tagReference?.length) {
     body +=
       'Tag reference (selected group; count=matching group annotations; arrows=manual relationships):\n';
+    body +=
+      'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.\n';
     for (const entry of tagReference) {
       body += formatTagReferenceLine(entry);
     }

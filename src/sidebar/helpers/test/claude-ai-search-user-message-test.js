@@ -135,6 +135,10 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
 
       assert.isAtLeast(referenceIdx, 0);
       assert.isBelow(referenceIdx, questionIdx);
+      assert.include(
+        out,
+        'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.',
+      );
       assert.include(out, '- Methods [count=2]: -> supports Finding\n');
       assert.notInclude(out, '"outgoingRelationships"');
     });

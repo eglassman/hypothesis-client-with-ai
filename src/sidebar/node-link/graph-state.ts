@@ -331,10 +331,8 @@ export function tagReferenceForNodeLinkState(
   state: NodeLinkSemanticState,
   annotations: Pick<Annotation, 'tags' | 'group'>[] = [],
   groupId?: string | null,
-  options: { includeDescriptiveTags?: boolean } = {},
 ): NodeLinkTagReferenceEntry[] {
   const normalizedState = normalizeNodeLinkState(state);
-  const includeDescriptiveTags = options.includeDescriptiveTags !== false;
   const annotationCounts = new Map<string, number>();
 
   for (const annotation of annotations) {
@@ -350,30 +348,24 @@ export function tagReferenceForNodeLinkState(
     normalizedState.descriptiveTags.map(item => item.tag),
   );
 
-  return tagsForNodeLinkState(normalizedState, annotations, groupId)
-    .filter(tag => includeDescriptiveTags || !descriptiveTags.has(tag))
-    .map(tag => {
+  return tagsForNodeLinkState(normalizedState, annotations, groupId).map(
+    tag => {
       const relationships = relationshipsForTag(normalizedState, tag);
-      const outgoing = relationships.outgoing.filter(
-        edge => includeDescriptiveTags || !descriptiveTags.has(edge.targetTag),
-      );
-      const incoming = relationships.incoming.filter(
-        edge => includeDescriptiveTags || !descriptiveTags.has(edge.sourceTag),
-      );
       return {
         tag,
         annotationCount: annotationCounts.get(tag) || 0,
         descriptive: descriptiveTags.has(tag),
-        outgoingRelationships: outgoing.map(edge => ({
+        outgoingRelationships: relationships.outgoing.map(edge => ({
           relationship: edge.connectionType,
           targetTag: edge.targetTag,
         })),
-        incomingRelationships: incoming.map(edge => ({
+        incomingRelationships: relationships.incoming.map(edge => ({
           sourceTag: edge.sourceTag,
           relationship: edge.connectionType,
         })),
       };
-    });
+    },
+  );
 }
 
 export function tagLegendText(state: Pick<NodeLinkSemanticState, 'tagEdges'>) {

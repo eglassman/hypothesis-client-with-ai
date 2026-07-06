@@ -305,56 +305,6 @@ describe('node-link graph state helpers', () => {
     ]);
   });
 
-  it('can omit descriptive tags and their relationships from tag reference data', () => {
-    const state = emptyNodeLinkState({
-      descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
-      tagEdges: [
-        {
-          sourceTag: 'Character',
-          targetTag: 'Theme',
-          connectionType: 'explains',
-        },
-        {
-          sourceTag: 'Character',
-          targetTag: 'Action',
-          connectionType: 'reveals',
-        },
-      ],
-    });
-
-    const reference = tagReferenceForNodeLinkState(
-      state,
-      [
-        { group: 'group-a', tags: ['Character'] },
-        { group: 'group-a', tags: ['Action'] },
-        { group: 'group-a', tags: ['Theme'] },
-      ],
-      'group-a',
-      { includeDescriptiveTags: false },
-    );
-
-    assert.deepEqual(reference, [
-      {
-        tag: 'Action',
-        annotationCount: 1,
-        descriptive: false,
-        outgoingRelationships: [],
-        incomingRelationships: [
-          { sourceTag: 'Character', relationship: 'reveals' },
-        ],
-      },
-      {
-        tag: 'Character',
-        annotationCount: 1,
-        descriptive: false,
-        outgoingRelationships: [
-          { relationship: 'reveals', targetTag: 'Action' },
-        ],
-        incomingRelationships: [],
-      },
-    ]);
-  });
-
   it('exports a readable legend for manual tag-tag relationships', () => {
     const legend = tagLegendText(
       emptyNodeLinkState({
