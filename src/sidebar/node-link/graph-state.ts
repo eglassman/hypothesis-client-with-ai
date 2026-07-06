@@ -59,6 +59,20 @@ export type TagRelationships = {
   incoming: TagRelationship[];
 };
 
+export type NodeLinkTagReferenceEntry = {
+  tag: string;
+  annotationCount: number;
+  descriptive: boolean;
+  outgoingRelationships: Array<{
+    relationship: string;
+    targetTag: string;
+  }>;
+  incomingRelationships: Array<{
+    sourceTag: string;
+    relationship: string;
+  }>;
+};
+
 function cleanString(value: unknown) {
   return String(value || '').trim();
 }
@@ -311,6 +325,47 @@ export function relationshipsForTag(
     .sort((a, b) => a.sourceTag.localeCompare(b.sourceTag));
 
   return { outgoing, incoming };
+}
+
+export function tagReferenceForNodeLinkState(
+  state: NodeLinkSemanticState,
+  annotations: Pick<Annotation, 'tags' | 'group'>[] = [],
+  groupId?: string | null,
+): NodeLinkTagReferenceEntry[] {
+  const normalizedState = normalizeNodeLinkState(state);
+  const annotationCounts = new Map<string, number>();
+
+  for (const annotation of annotations) {
+    if (groupId && annotation.group !== groupId) {
+      continue;
+    }
+    for (const tag of contentTags(annotation.tags || [])) {
+      annotationCounts.set(tag, (annotationCounts.get(tag) || 0) + 1);
+    }
+  }
+
+  const descriptiveTags = new Set(
+    normalizedState.descriptiveTags.map(item => item.tag),
+  );
+
+  return tagsForNodeLinkState(normalizedState, annotations, groupId).map(
+    tag => {
+      const relationships = relationshipsForTag(normalizedState, tag);
+      return {
+        tag,
+        annotationCount: annotationCounts.get(tag) || 0,
+        descriptive: descriptiveTags.has(tag),
+        outgoingRelationships: relationships.outgoing.map(edge => ({
+          relationship: edge.connectionType,
+          targetTag: edge.targetTag,
+        })),
+        incomingRelationships: relationships.incoming.map(edge => ({
+          sourceTag: edge.sourceTag,
+          relationship: edge.connectionType,
+        })),
+      };
+    },
+  );
 }
 
 export function tagLegendText(state: Pick<NodeLinkSemanticState, 'tagEdges'>) {

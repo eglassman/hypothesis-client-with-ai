@@ -1,4 +1,5 @@
 import type { Annotation } from '../../types/api';
+import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import {
   NODE_LINK_STATE_TAG,
   NODE_LINK_STATE_TAGS,
@@ -111,8 +112,50 @@ export class NodeLinkStateService {
   async fetchGroupAnnotations(
     groupId: string,
     signal?: AbortSignal,
+    options: { uri?: string } = {},
   ): Promise<Annotation[]> {
     const annotations: Annotation[] = [];
+
+    if (options.uri || groupId === PUBLIC_GROUP_ID) {
+      if (!options.uri) {
+        return annotations;
+      }
+
+      for (let page = 0; page < MAX_GROUP_ANNOTATION_PAGES; page++) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+
+        const result = await this._api.search(
+          {
+            group: groupId,
+            uri: options.uri,
+            limit: GROUP_ANNOTATIONS_PAGE_SIZE,
+            offset: page * GROUP_ANNOTATIONS_PAGE_SIZE,
+            sort: 'created',
+            order: 'asc',
+          },
+          undefined,
+          signal,
+        );
+        const pageAnnotations = result.rows || [];
+        for (const annotation of pageAnnotations) {
+          if (!isNodeLinkStateAnnotation(annotation)) {
+            annotations.push(annotation);
+          }
+        }
+
+        if (
+          pageAnnotations.length < GROUP_ANNOTATIONS_PAGE_SIZE ||
+          annotations.length >= (result.total || 0)
+        ) {
+          break;
+        }
+      }
+
+      return annotations;
+    }
+
     let pageAfter: string | undefined;
 
     for (let page = 0; page < MAX_GROUP_ANNOTATION_PAGES; page++) {

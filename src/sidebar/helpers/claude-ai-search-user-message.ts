@@ -15,6 +15,20 @@ export type FewShotExampleRow = {
   quote: string;
 };
 
+export type TagReferencePromptEntry = {
+  tag: string;
+  annotationCount: number;
+  descriptive: boolean;
+  outgoingRelationships: Array<{
+    relationship: string;
+    targetTag: string;
+  }>;
+  incomingRelationships: Array<{
+    sourceTag: string;
+    relationship: string;
+  }>;
+};
+
 export type TagSet = 'A' | 'B';
 
 type CandidateRow = {
@@ -63,7 +77,7 @@ export function buildCandidateRows(
     }
 
     const q = quote(ann);
-    if (q == null || !q.trim()) {
+    if (q === null || q === undefined || !q.trim()) {
       continue;
     }
 
@@ -245,7 +259,7 @@ export function collectNegativeExamplesFromAnnotations(
       continue;
     }
     const q = quote(ann);
-    if (q == null || !norm(q)) {
+    if (q === null || q === undefined || !norm(q)) {
       continue;
     }
     for (const tag of negativeSchemaTags(ann.tags ?? [])) {
@@ -308,7 +322,7 @@ function existingAnnotationCoversAiQuote(
       continue;
     }
     const q = quote(ann);
-    if (q == null || !norm(q)) {
+    if (q === null || q === undefined || !norm(q)) {
       continue;
     }
     if (norm(q) !== normalizedQuoteText) {
@@ -614,14 +628,49 @@ export function formatFewShotExampleLine(
   return `- tag: ${tag}\n  query: ${query}\n  quote: ${quoteText}\n`;
 }
 
+function formatTagReferenceLine(entry: TagReferencePromptEntry): string {
+  const flags = [`count=${entry.annotationCount}`];
+  if (entry.descriptive) {
+    flags.push('descriptive');
+  }
+  const relationships = [
+    ...entry.outgoingRelationships.map(
+      rel => `-> ${rel.relationship} ${rel.targetTag}`,
+    ),
+    ...entry.incomingRelationships.map(
+      rel => `<- ${rel.sourceTag} ${rel.relationship}`,
+    ),
+  ];
+  return `- ${entry.tag} [${flags.join(', ')}]: ${
+    relationships.length ? relationships.join('; ') : 'none'
+  }\n`;
+}
+
 export function buildClaudeAISearchUserMessage(params: {
   positiveExamples: FewShotExampleRow[];
   schemaTag: string;
   searchQuery: string;
   negativeExamples?: FewShotExampleRow[];
+  tagReference?: TagReferencePromptEntry[];
 }): string {
-  const { positiveExamples, schemaTag, searchQuery, negativeExamples } = params;
+  const {
+    positiveExamples,
+    schemaTag,
+    searchQuery,
+    negativeExamples,
+    tagReference,
+  } = params;
   let body = '';
+  if (tagReference?.length) {
+    body +=
+      'Tag reference (selected group; count=matching group annotations; arrows=manual relationships):\n';
+    body +=
+      'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.\n';
+    for (const entry of tagReference) {
+      body += formatTagReferenceLine(entry);
+    }
+    body += '\n';
+  }
   if (positiveExamples.length > 0) {
     body += EXAMPLES_HEADER;
     for (const row of positiveExamples) {

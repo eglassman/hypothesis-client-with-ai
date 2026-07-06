@@ -99,6 +99,16 @@ function canonicalGroupId(groupId: string, groups: Group[]) {
   return findGroupByIdentifier(groupId, groups)?.id || groupId;
 }
 
+export function routeGroupToApply(
+  canonicalRouteGroup: string,
+  appliedRouteGroup: string,
+) {
+  if (canonicalRouteGroup && canonicalRouteGroup !== appliedRouteGroup) {
+    return canonicalRouteGroup;
+  }
+  return '';
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -1598,7 +1608,7 @@ export function NodeLinkEditor({
   );
 }
 
-function NodeLinkGraphPage({
+export function NodeLinkGraphPage({
   auth,
   nodeLinkState,
   session,
@@ -1609,6 +1619,8 @@ function NodeLinkGraphPage({
   const groups = store.allGroups();
   const hasFetchedProfile = store.hasFetchedProfile();
   const isLoggedIn = store.isLoggedIn();
+  const documentUri =
+    routeParams.uri || store.searchUris()[0] || store.mainFrame()?.uri || '';
   const tagColors = store.tagInventorySchemaTagColors();
   const routeGroup = routeGroupParam(routeParams);
   const focusedGroupId = store.focusedGroupId() || '';
@@ -1632,15 +1644,21 @@ function NodeLinkGraphPage({
   const [saveMessage, setSaveMessage] = useState('');
   const activeLoadRef = useRef<{
     controller: AbortController;
-    groupId: string;
+    loadKey: string;
   } | null>(null);
-  const loadedGroupRef = useRef('');
+  const loadedGraphRef = useRef('');
+  const appliedRouteGroupRef = useRef(canonicalRouteGroup);
 
   useEffect(() => {
-    if (canonicalRouteGroup && canonicalRouteGroup !== selectedGroupId) {
-      setSelectedGroupId(canonicalRouteGroup);
+    const nextRouteGroup = routeGroupToApply(
+      canonicalRouteGroup,
+      appliedRouteGroupRef.current,
+    );
+    if (nextRouteGroup) {
+      appliedRouteGroupRef.current = nextRouteGroup;
+      setSelectedGroupId(nextRouteGroup);
     }
-  }, [canonicalRouteGroup, selectedGroupId]);
+  }, [canonicalRouteGroup]);
 
   useEffect(() => {
     if (!selectedGroupId && fallbackGroupId) {
@@ -1651,6 +1669,7 @@ function NodeLinkGraphPage({
   const loadGraph = (force = false) => {
     const selectedGroup = findGroupByIdentifier(selectedGroupId, groups);
     const groupId = selectedGroup?.id || selectedGroupId;
+    const loadKey = `${groupId}\0${documentUri}`;
     const waitingForGroups = Boolean(selectedGroupId) && groups.length === 0;
     const unresolvedGroupIdentifier =
       Boolean(selectedGroupId) && groups.length > 0 && !selectedGroup;
@@ -1664,20 +1683,22 @@ function NodeLinkGraphPage({
     }
     if (
       !force &&
-      (activeLoadRef.current?.groupId === groupId ||
-        loadedGroupRef.current === groupId)
+      (activeLoadRef.current?.loadKey === loadKey ||
+        loadedGraphRef.current === loadKey)
     ) {
       return undefined;
     }
 
     const controller = new AbortController();
     activeLoadRef.current?.controller.abort();
-    activeLoadRef.current = { controller, groupId };
+    activeLoadRef.current = { controller, loadKey };
     setStatus('loading');
     setMessage('');
 
     Promise.all([
-      nodeLinkState.fetchGroupAnnotations(groupId, controller.signal),
+      nodeLinkState.fetchGroupAnnotations(groupId, controller.signal, {
+        uri: documentUri,
+      }),
       nodeLinkState.loadState(groupId),
     ])
       .then(([fetchedAnnotations, loadedState]) => {
@@ -1689,7 +1710,7 @@ function NodeLinkGraphPage({
         setStatus('loaded');
         setSaveStatus('idle');
         setSaveMessage('');
-        loadedGroupRef.current = groupId;
+        loadedGraphRef.current = loadKey;
         activeLoadRef.current = null;
         setMessage(
           loadedState.status === 'invalid' ? loadedState.message || '' : '',
@@ -1716,6 +1737,7 @@ function NodeLinkGraphPage({
   };
 
   useEffect(loadGraph, [
+    documentUri,
     groups,
     groups.length,
     isLoggedIn,

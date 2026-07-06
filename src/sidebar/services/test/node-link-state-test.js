@@ -191,6 +191,96 @@ describe('NodeLinkStateService', () => {
     );
   });
 
+  it('fetches document-scoped private-group annotations with search', async () => {
+    fakeApi.search.resolves({
+      rows: [
+        {
+          ...fixtures.defaultAnnotation(),
+          id: 'private-ann',
+          group: 'group-a',
+          uri: 'https://example.com/doc',
+          tags: ['Character'],
+        },
+        stateAnnotation({
+          id: 'state-ann',
+          group: 'group-a',
+          uri: nodeLinkStateUri('group-a'),
+        }),
+      ],
+      total: 2,
+    });
+
+    const annotations = await service.fetchGroupAnnotations(
+      'group-a',
+      undefined,
+      { uri: 'https://example.com/doc' },
+    );
+
+    assert.calledWith(
+      fakeApi.search,
+      sinon.match({
+        group: 'group-a',
+        uri: 'https://example.com/doc',
+        limit: 100,
+        offset: 0,
+      }),
+    );
+    assert.notCalled(fakeApi.group.annotations.read);
+    assert.deepEqual(
+      annotations.map(ann => ann.id),
+      ['private-ann'],
+    );
+  });
+
+  it('fetches Public-group annotations with search instead of the group annotations endpoint', async () => {
+    fakeApi.search.resolves({
+      rows: [
+        {
+          ...fixtures.defaultAnnotation(),
+          id: 'public-ann',
+          group: '__world__',
+          uri: 'https://example.com/doc',
+          tags: ['Character'],
+        },
+        stateAnnotation({
+          id: 'state-ann',
+          group: '__world__',
+          uri: nodeLinkStateUri('__world__'),
+        }),
+      ],
+      total: 2,
+    });
+
+    const annotations = await service.fetchGroupAnnotations(
+      '__world__',
+      undefined,
+      { uri: 'https://example.com/doc' },
+    );
+
+    assert.calledWith(
+      fakeApi.search,
+      sinon.match({
+        group: '__world__',
+        uri: 'https://example.com/doc',
+        limit: 100,
+        offset: 0,
+      }),
+    );
+    assert.notCalled(fakeApi.group.annotations.read);
+    assert.deepEqual(
+      annotations.map(ann => ann.id),
+      ['public-ann'],
+    );
+  });
+
+  it('does not fetch Public-group annotations without a document URI', async () => {
+    const annotations = await service.fetchGroupAnnotations('__world__');
+
+    assert.deepEqual(annotations, []);
+    assert.notCalled(fakeApi.search);
+    assert.notCalled(fakeApi.group.annotations.read);
+  });
+
   it('creates a Hypothesis state annotation when none exists', async () => {
     const state = statePayload({
       edits: {

@@ -13,6 +13,7 @@ import {
   serializeNodeLinkState,
   stateFromNodeLinkPayload,
   tagLegendText,
+  tagReferenceForNodeLinkState,
   tagsForNodeLinkState,
 } from '../graph-state';
 
@@ -242,6 +243,66 @@ describe('node-link graph state helpers', () => {
         },
       ],
     });
+  });
+
+  it('builds prompt-ready tag reference data', () => {
+    const state = emptyNodeLinkState({
+      descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
+      tagEdges: [
+        {
+          sourceTag: 'Character',
+          targetTag: 'Theme',
+          connectionType: 'explains',
+        },
+        {
+          sourceTag: 'Action',
+          targetTag: 'Character',
+          connectionType: 'reveals',
+        },
+      ],
+    });
+
+    const reference = tagReferenceForNodeLinkState(
+      state,
+      [
+        { group: 'group-a', tags: ['Character', 'Character'] },
+        { group: 'group-a', tags: ['Theme', 'ai-pending'] },
+        { group: 'group-b', tags: ['Other'] },
+      ],
+      'group-a',
+    );
+
+    assert.deepEqual(reference, [
+      {
+        tag: 'Action',
+        annotationCount: 0,
+        descriptive: false,
+        outgoingRelationships: [
+          { relationship: 'reveals', targetTag: 'Character' },
+        ],
+        incomingRelationships: [],
+      },
+      {
+        tag: 'Character',
+        annotationCount: 1,
+        descriptive: false,
+        outgoingRelationships: [
+          { relationship: 'explains', targetTag: 'Theme' },
+        ],
+        incomingRelationships: [
+          { sourceTag: 'Action', relationship: 'reveals' },
+        ],
+      },
+      {
+        tag: 'Theme',
+        annotationCount: 1,
+        descriptive: true,
+        outgoingRelationships: [],
+        incomingRelationships: [
+          { sourceTag: 'Character', relationship: 'explains' },
+        ],
+      },
+    ]);
   });
 
   it('exports a readable legend for manual tag-tag relationships', () => {
