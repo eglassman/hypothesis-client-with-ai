@@ -30,6 +30,7 @@ import {
   deleteAllActionForTagInventoryRowMatch,
   expectedTagsForStrictAISearchPending,
   filterAiSearchQuotesAgainstExisting,
+  listSavedAnnotationsMatchingTagInventoryRow,
   listStrictTagInventoryRowPendingAnnotations,
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
@@ -1138,8 +1139,8 @@ function AISearchPanel({
                           scope="col"
                         >
                           <span className="sr-only">
-                            Pending and total matching annotations for this tag
-                            and query
+                            Pending, confirmed in this doc, and total across all
+                            docs matching annotations for this tag and query
                           </span>
                         </th>
                         <th
@@ -1166,7 +1167,20 @@ function AISearchPanel({
                               uriAliases,
                             )
                           : 0;
-                        const totalCountFromStore = focusedGroupId
+                        const totalInThisDocCount = documentUri
+                          ? listSavedAnnotationsMatchingTagInventoryRow(
+                              savedAnnotations,
+                              documentUri,
+                              row.schemaTag,
+                              row.query,
+                              uriAliases,
+                            ).length
+                          : 0;
+                        const confirmedInThisDocCount = Math.max(
+                          0,
+                          totalInThisDocCount - pendingCount,
+                        );
+                        const totalAcrossAllDocsFromStore = focusedGroupId
                           ? countAnnotationsForTagInventoryRow(
                               annotationsForInventoryCount,
                               row,
@@ -1177,10 +1191,10 @@ function AISearchPanel({
                               },
                             )
                           : 0;
-                        const totalCount =
+                        const totalAcrossAllDocsCount =
                           deleteAllRemaining?.rowId === row.id
                             ? deleteAllRemaining.remaining
-                            : totalCountFromStore;
+                            : totalAcrossAllDocsFromStore;
                         const rerunDisabled = globalRowLock || !documentUri;
                         const deletePendingDisabled =
                           globalRowLock || !documentUri || pendingCount === 0;
@@ -1290,7 +1304,7 @@ function AISearchPanel({
                             </td>
                             <td className="w-min py-0.5 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
                               <span
-                                title="Strict AI-pending annotations for this tag and query on this document"
+                                title="Pending AI suggestions for this tag and query in this doc"
                                 className="cursor-help tabular-nums"
                                 aria-label={`${pendingCount} pending`}
                               >
@@ -1304,11 +1318,25 @@ function AISearchPanel({
                                 |{' '}
                               </span>
                               <span
-                                title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
+                                title="Confirmed (non-pending) matching annotations for this tag and query in this doc"
                                 className="cursor-help tabular-nums"
-                                aria-label={`${totalCount} total`}
+                                aria-label={`${confirmedInThisDocCount} confirmed in this doc`}
                               >
-                                {totalCount}
+                                {confirmedInThisDocCount}
+                              </span>
+                              <span
+                                className="text-color-text-light"
+                                aria-hidden="true"
+                              >
+                                {' '}
+                                |{' '}
+                              </span>
+                              <span
+                                title="Total matching annotations for this tag and query across all docs"
+                                className="cursor-help tabular-nums"
+                                aria-label={`${totalAcrossAllDocsCount} total across all docs`}
+                              >
+                                {totalAcrossAllDocsCount}
                               </span>
                             </td>
                             <td className="w-min py-0.5 align-middle whitespace-nowrap">
