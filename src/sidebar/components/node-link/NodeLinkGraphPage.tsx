@@ -1932,49 +1932,55 @@ export function NodeLinkGraphPage({
 
       <div className="flex min-h-0 flex-1">
         <main className="grid min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 p-4">
-          <section className="flex flex-wrap items-end gap-3 rounded border bg-white p-3">
-            <label className="grid min-w-[280px] gap-1 text-sm font-medium">
-              <span>Group</span>
-              <select
-                className="h-9 rounded border bg-white px-2"
-                value={selectedGroupId}
-                disabled={!isLoggedIn || !groups.length}
-                onChange={event => {
-                  setSelectedGroupId((event.target as HTMLSelectElement).value);
-                  setSelectedDocumentUri('');
-                }}
-              >
-                {!groups.length && <option value="">No groups loaded</option>}
-                {groups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {groupLabel(group)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="grid min-w-[280px] gap-1 text-sm font-medium">
-              <span>Document</span>
-              <select
-                className="h-9 rounded border bg-white px-2"
-                value={selectedDocumentUri}
-                disabled={
-                  !isLoggedIn || status === 'loading' || !documentOptions.length
-                }
-                onChange={event =>
-                  setSelectedDocumentUri(
-                    (event.target as HTMLSelectElement).value,
-                  )
-                }
-              >
-                <option value="">All</option>
-                {documentOptions.map(document => (
-                  <option key={document.uri} value={document.uri}>
-                    {document.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="text-sm text-grey-6">
+          <section className="rounded border bg-white p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="grid min-w-0 gap-1 text-sm font-medium">
+                <span>Group</span>
+                <select
+                  className="h-9 min-w-0 rounded border bg-white px-2"
+                  value={selectedGroupId}
+                  disabled={!isLoggedIn || !groups.length}
+                  onChange={event => {
+                    setSelectedGroupId(
+                      (event.target as HTMLSelectElement).value,
+                    );
+                    setSelectedDocumentUri('');
+                  }}
+                >
+                  {!groups.length && <option value="">No groups loaded</option>}
+                  {groups.map(group => (
+                    <option key={group.id} value={group.id}>
+                      {groupLabel(group)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid min-w-0 gap-1 text-sm font-medium">
+                <span>Document</span>
+                <select
+                  className="h-9 min-w-0 rounded border bg-white px-2"
+                  value={selectedDocumentUri}
+                  disabled={
+                    !isLoggedIn ||
+                    status === 'loading' ||
+                    !documentOptions.length
+                  }
+                  onChange={event =>
+                    setSelectedDocumentUri(
+                      (event.target as HTMLSelectElement).value,
+                    )
+                  }
+                >
+                  <option value="">All</option>
+                  {documentOptions.map(document => (
+                    <option key={document.uri} value={document.uri}>
+                      {document.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-2 text-sm text-grey-6">
               {status === 'loading'
                 ? 'Loading graph data...'
                 : selectedGroup
