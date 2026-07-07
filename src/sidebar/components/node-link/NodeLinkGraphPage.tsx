@@ -13,6 +13,7 @@ import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
 import {
   contentTags,
   emptyNodeLinkState,
+  isNodeLinkStateAnnotation,
   tagLegendText,
 } from '../../node-link/graph-state';
 import type {
@@ -112,12 +113,23 @@ function annotationsForDocument(
     : annotations;
 }
 
+function isNodeLinkGraphEvidence(annotation: Annotation) {
+  if (
+    annotation.hidden ||
+    annotation.references?.length ||
+    isNodeLinkStateAnnotation(annotation)
+  ) {
+    return false;
+  }
+  return contentTags(annotation.tags || []).length > 0;
+}
+
 function semanticStateForDocumentFilter(
   semanticState: NodeLinkSemanticState,
   annotations: Annotation[],
 ) {
   const annotationTags = new Set<string>();
-  for (const annotation of annotations) {
+  for (const annotation of annotations.filter(isNodeLinkGraphEvidence)) {
     for (const tag of contentTags(annotation.tags || [])) {
       annotationTags.add(tag);
     }
@@ -128,6 +140,8 @@ function semanticStateForDocumentFilter(
   );
   const visibleDescriptiveTags = new Set<string>();
   for (const edge of semanticState.tagEdges) {
+    // When filtering to one document, keep descriptive tags only if they are
+    // linked to an evidence tag that appears in that document.
     if (
       annotationTags.has(edge.sourceTag) &&
       descriptiveTags.has(edge.targetTag)
