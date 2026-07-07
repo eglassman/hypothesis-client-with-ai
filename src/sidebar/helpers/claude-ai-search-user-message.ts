@@ -2,7 +2,11 @@ import type { SavedAnnotation } from '../../types/api';
 import type { AnnotationsService } from '../services/annotations';
 import { isReply, isSaved, quote } from './annotation-metadata';
 import { documentUriMatches } from './document-uri';
-import { negativeSchemaTags, positiveSchemaTags } from './tag-inventory-group';
+import {
+  negativeSchemaTags,
+  positiveSchemaTagForNegativeTag,
+  positiveSchemaTags,
+} from './tag-inventory-group';
 
 export type AiSearchQuoteItem = { text?: string };
 
@@ -263,8 +267,9 @@ export function collectNegativeExamplesFromAnnotations(
       continue;
     }
     for (const tag of negativeSchemaTags(ann.tags ?? [])) {
+      const baseTag = positiveSchemaTagForNegativeTag(tag) ?? tag;
       rows.push({
-        tag,
+        tag: baseTag,
         query: ann.text ?? '',
         quote: q,
       });
@@ -613,6 +618,9 @@ const EXAMPLES_HEADER = 'Examples of tag-query-quote triples:\n\n';
 const NEGATIVE_EXAMPLES_HEADER =
   'Negative examples of tag-query-quote triples:\n\n';
 
+const RELATIONSHIPS_HEADER =
+  'These tags have the following relationships to each other:\n';
+
 export type FewShotExampleKind = 'positive' | 'negative';
 
 export function formatFewShotExampleLine(
@@ -628,21 +636,64 @@ export function formatFewShotExampleLine(
   return `- tag: ${tag}\n  query: ${query}\n  quote: ${quoteText}\n`;
 }
 
-function tagNameForReference(tag: string, descriptiveTags: Set<string>) {
-  return descriptiveTags.has(tag) ? `${tag} [descriptive]` : tag;
+function parseTagsFromExampleRow(row: FewShotExampleRow): string[] {
+  const parts = row.tag.split(',').map(part => part.trim());
+  if (parts.length === 1 && parts[0] === '') {
+    return [''];
+  }
+  return parts.filter(Boolean);
 }
 
-function formatTagReferenceLines(entries: TagReferencePromptEntry[]): string {
-  const descriptiveTags = new Set(
-    entries.filter(entry => entry.descriptive).map(entry => entry.tag),
-  );
-  let lines = '';
-  for (const entry of entries) {
-    const sourceTag = tagNameForReference(entry.tag, descriptiveTags);
-    for (const rel of entry.outgoingRelationships) {
-      const targetTag = tagNameForReference(rel.targetTag, descriptiveTags);
-      lines += `${sourceTag} ${rel.relationship} ${targetTag}\n`;
+function examplesForTag(
+  examples: FewShotExampleRow[],
+  tag: string,
+): FewShotExampleRow[] {
+  return examples.filter(row => parseTagsFromExampleRow(row).includes(tag));
+}
+
+function tagReferenceEntryForTag(
+  entries: TagReferencePromptEntry[],
+  tag: string,
+): TagReferencePromptEntry | undefined {
+  return entries.find(entry => entry.tag === tag);
+}
+
+function collectPromptTags(
+  positiveExamples: FewShotExampleRow[],
+  negativeExamples: FewShotExampleRow[],
+  tagReference: TagReferencePromptEntry[],
+): string[] {
+  const tags = new Set<string>();
+
+  for (const row of positiveExamples) {
+    for (const tag of parseTagsFromExampleRow(row)) {
+      tags.add(tag);
     }
+  }
+  for (const row of negativeExamples) {
+    for (const tag of parseTagsFromExampleRow(row)) {
+      tags.add(tag);
+    }
+  }
+  for (const entry of tagReference) {
+    if (entry.outgoingRelationships.length > 0) {
+      tags.add(entry.tag);
+    }
+  }
+
+  return [...tags].sort((a, b) => a.localeCompare(b));
+}
+
+function formatTagSectionTitle(tag: string): string {
+  return `Tag: ${tag}\n\n`;
+}
+
+function formatTagOutgoingRelationshipLines(
+  entry: TagReferencePromptEntry,
+): string {
+  let lines = '';
+  for (const rel of entry.outgoingRelationships) {
+    lines += `${entry.tag} ${rel.relationship} ${rel.targetTag}\n`;
   }
   return lines;
 }
@@ -658,31 +709,55 @@ export function buildClaudeAISearchUserMessage(params: {
     positiveExamples,
     schemaTag,
     searchQuery,
-    negativeExamples,
-    tagReference,
+    negativeExamples = [],
+    tagReference = [],
   } = params;
   let body = '';
-  if (tagReference?.length) {
-    body += 'Tag relationships for the selected group:\n';
-    body +=
-      'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.\n';
-    body += formatTagReferenceLines(tagReference);
-    body += '\n';
-  }
-  if (positiveExamples.length > 0) {
-    body += EXAMPLES_HEADER;
-    for (const row of positiveExamples) {
-      body += formatFewShotExampleLine(row, { kind: 'positive' });
+
+  for (const tag of collectPromptTags(
+    positiveExamples,
+    negativeExamples,
+    tagReference,
+  )) {
+    const positiveForTag = examplesForTag(positiveExamples, tag);
+    const negativeForTag = examplesForTag(negativeExamples, tag);
+    const referenceEntry = tagReferenceEntryForTag(tagReference, tag);
+    const hasOutgoingRelationships =
+      (referenceEntry?.outgoingRelationships.length ?? 0) > 0;
+
+    if (
+      positiveForTag.length === 0 &&
+      negativeForTag.length === 0 &&
+      !hasOutgoingRelationships
+    ) {
+      continue;
     }
-    body += '\n';
-  }
-  if (negativeExamples?.length) {
-    body += NEGATIVE_EXAMPLES_HEADER;
-    for (const ex of negativeExamples) {
-      body += `${formatFewShotExampleLine(ex, { kind: 'negative' })}\n`;
+
+    body += formatTagSectionTitle(tag);
+
+    if (positiveForTag.length > 0) {
+      body += EXAMPLES_HEADER;
+      for (const row of positiveForTag) {
+        body += formatFewShotExampleLine(row, { kind: 'positive' });
+      }
+      body += '\n';
     }
-    body += '\n';
+
+    if (negativeForTag.length > 0) {
+      body += NEGATIVE_EXAMPLES_HEADER;
+      for (const row of negativeForTag) {
+        body += `${formatFewShotExampleLine(row, { kind: 'negative' })}\n`;
+      }
+      body += '\n';
+    }
+
+    if (hasOutgoingRelationships && referenceEntry) {
+      body += RELATIONSHIPS_HEADER;
+      body += formatTagOutgoingRelationshipLines(referenceEntry);
+      body += '\n';
+    }
   }
+
   if (schemaTag.trim()) {
     body += `What retrieved verbatim quotes from the document would go with the tag "${schemaTag}" and the query "${searchQuery}"?`;
   } else {

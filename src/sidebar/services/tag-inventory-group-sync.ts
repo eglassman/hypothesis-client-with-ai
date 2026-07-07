@@ -166,22 +166,13 @@ async function fetchAllGroupAnnotations(
   api: APIService,
   groupId: string,
   signal: AbortSignal,
-  debugContext?: { profileUserid: string | null; groupType: string | null },
 ): Promise<SavedAnnotation[]> {
-  // #region agent log
-  fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group annotations fetch start',data:{groupId,profileUserid:debugContext?.profileUserid??null,groupType:debugContext?.groupType??null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-
   try {
-    const annotations = await fetchAllGroupAnnotationsViaGroupEndpoint(
+    return await fetchAllGroupAnnotationsViaGroupEndpoint(
       api,
       groupId,
       signal,
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group endpoint succeeded',data:{groupId,count:annotations.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return annotations;
   } catch (err) {
     const status =
       err instanceof FetchError ? err.response?.status ?? null : null;
@@ -189,19 +180,7 @@ async function fetchAllGroupAnnotations(
       throw err;
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group endpoint 404, falling back to search',data:{groupId,profileUserid:debugContext?.profileUserid??null,groupType:debugContext?.groupType??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-
-    const annotations = await fetchAllGroupAnnotationsViaSearch(
-      api,
-      groupId,
-      signal,
-    );
-    // #region agent log
-    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'search fallback succeeded',data:{groupId,count:annotations.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return annotations;
+    return fetchAllGroupAnnotationsViaSearch(api, groupId, signal);
   }
 }
 
@@ -347,19 +326,10 @@ export class TagInventoryGroupSyncService {
 
     const work = (async () => {
       try {
-        const focusedGroup = this._store.focusedGroup();
-        const profileUserid = this._store.profile()?.userid ?? null;
-        // #region agent log
-        fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'pre-fix',hypothesisId:'D',location:'tag-inventory-group-sync.ts:getGroupAnnotations',message:'getGroupAnnotations start',data:{groupId,force,profileUserid,hasFetchedProfile:this._store.hasFetchedProfile(),focusedGroupId:this._store.focusedGroupId(),groupType:focusedGroup?.type??null,isMember:focusedGroup?.isMember??null,groupInList:this._store.allGroups().some(g=>g.id===groupId)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const annotations = await fetchAllGroupAnnotations(
           this._api,
           groupId,
           controller.signal,
-          {
-            profileUserid,
-            groupType: focusedGroup?.type ?? null,
-          },
         );
         if (controller.signal.aborted) {
           throw new DOMException('Aborted', 'AbortError');

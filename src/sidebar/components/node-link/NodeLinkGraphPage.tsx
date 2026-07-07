@@ -1933,7 +1933,7 @@ export function NodeLinkGraphPage({
       <div className="flex min-h-0 flex-1">
         <main className="grid min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 p-4">
           <section className="rounded border bg-white p-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <label className="grid min-w-0 gap-1 text-sm font-medium">
                 <span>Group</span>
                 <select
@@ -1955,6 +1955,7 @@ export function NodeLinkGraphPage({
                   ))}
                 </select>
               </label>
+              {/* Document filter disabled — always show all documents in the group.
               <label className="grid min-w-0 gap-1 text-sm font-medium">
                 <span>Document</span>
                 <select
@@ -1979,6 +1980,7 @@ export function NodeLinkGraphPage({
                   ))}
                 </select>
               </label>
+              */}
             </div>
             <div className="mt-2 text-sm text-grey-6">
               {status === 'loading'

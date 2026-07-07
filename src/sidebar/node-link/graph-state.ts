@@ -10,7 +10,13 @@ export const NODE_LINK_STATE_TAGS = [
 ];
 
 const STATE_URI_PREFIX = 'https://hypothesis-node-link.local/state/group/';
-const SYSTEM_TAGS = new Set(['ai-pending', 'ai-user-approved']);
+const NEG_EXAMPLE_TAG_SUFFIX = '-neg-example';
+const SYSTEM_TAGS = new Set([
+  'ai-pending',
+  'ai-user-approved',
+  NODE_LINK_STATE_TAG,
+  NODE_LINK_STATE_VERSION_TAG,
+]);
 
 export type DescriptiveTag = {
   id: string;
@@ -278,7 +284,10 @@ export function contentTags(tags: string[] = []) {
   const result: string[] = [];
   for (const rawTag of tags) {
     const tag = rawTag.trim();
-    if (!tag || SYSTEM_TAGS.has(tag) || seen.has(tag)) {
+    const isNegExample =
+      tag.length > NEG_EXAMPLE_TAG_SUFFIX.length &&
+      tag.endsWith(NEG_EXAMPLE_TAG_SUFFIX);
+    if (!tag || SYSTEM_TAGS.has(tag) || isNegExample || seen.has(tag)) {
       continue;
     }
     seen.add(tag);
@@ -348,7 +357,7 @@ export function tagReferenceForNodeLinkState(
     normalizedState.descriptiveTags.map(item => item.tag),
   );
 
-  return tagsForNodeLinkState(normalizedState, annotations, groupId)
+  const result = tagsForNodeLinkState(normalizedState, annotations, groupId)
     .map(tag => {
       const relationships = relationshipsForTag(normalizedState, tag);
       return {
@@ -370,6 +379,7 @@ export function tagReferenceForNodeLinkState(
         entry.outgoingRelationships.length ||
         entry.incomingRelationships.length,
     );
+  return result;
 }
 
 export function tagLegendText(state: Pick<NodeLinkSemanticState, 'tagEdges'>) {
