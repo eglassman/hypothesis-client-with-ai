@@ -348,8 +348,8 @@ export function tagReferenceForNodeLinkState(
     normalizedState.descriptiveTags.map(item => item.tag),
   );
 
-  return tagsForNodeLinkState(normalizedState, annotations, groupId).map(
-    tag => {
+  return tagsForNodeLinkState(normalizedState, annotations, groupId)
+    .map(tag => {
       const relationships = relationshipsForTag(normalizedState, tag);
       return {
         tag,
@@ -364,8 +364,12 @@ export function tagReferenceForNodeLinkState(
           relationship: edge.connectionType,
         })),
       };
-    },
-  );
+    })
+    .filter(
+      entry =>
+        entry.outgoingRelationships.length ||
+        entry.incomingRelationships.length,
+    );
 }
 
 export function tagLegendText(state: Pick<NodeLinkSemanticState, 'tagEdges'>) {

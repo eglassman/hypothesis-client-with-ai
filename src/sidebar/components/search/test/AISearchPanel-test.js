@@ -294,7 +294,7 @@ describe('AISearchPanel', () => {
       {
         id: 'ann-1',
         group: 'group-1',
-        tags: ['Methods', 'Finding'],
+        tags: ['Methods', 'Finding', 'QuoteOnly'],
         text: '',
         target: [],
       },
@@ -344,18 +344,22 @@ describe('AISearchPanel', () => {
 
     const prompt = fakeClaude.AISearchDocument.firstCall.args[0].query;
     assert.calledWith(fakeNodeLinkState.loadState, 'group-1');
-    assert.include(prompt, 'Tag reference (selected group');
+    assert.include(prompt, 'Tag relationships for the selected group:');
     assert.include(
       prompt,
       'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.',
     );
-    assert.include(prompt, '- Methods [count=1]: -> shows Finding');
-    assert.include(prompt, '-> supports Theme');
-    assert.include(prompt, '- Finding [count=1]: <- Methods shows');
-    assert.include(
-      prompt,
-      '- Theme [count=0, descriptive]: <- Methods supports',
+    assert.include(prompt, 'Methods shows Finding');
+    assert.include(prompt, 'Methods supports Theme [descriptive]');
+    assert.lengthOf(prompt.match(/Methods shows Finding/g) || [], 1);
+    assert.lengthOf(
+      prompt.match(/Methods supports Theme \[descriptive\]/g) || [],
+      1,
     );
+    assert.notInclude(prompt, 'QuoteOnly');
+    assert.notInclude(prompt, '<-');
+    assert.notInclude(prompt, '->');
+    assert.notInclude(prompt, 'count=');
     assert.notInclude(prompt, '"outgoingRelationships"');
   });
 
