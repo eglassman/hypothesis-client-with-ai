@@ -45,7 +45,7 @@ function norm(value: string): string {
   return value.trim();
 }
 
-function isAiSearchSystemTag(tag: string): boolean {
+export function isAiSearchSystemTag(tag: string): boolean {
   return (
     tag === AI_USER_APPROVED ||
     tag === AI_PENDING ||

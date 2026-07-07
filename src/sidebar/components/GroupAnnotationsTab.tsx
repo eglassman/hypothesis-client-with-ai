@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { SavedAnnotation } from '../../types/api';
 import { quote as annotationQuote } from '../helpers/annotation-metadata';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { isAiSearchSystemTag } from '../helpers/tag-inventory-group';
 import { withServices } from '../service-context';
 import {
   savedAnnotationsForCurrentDocument,
@@ -633,6 +634,9 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   for (const ann of annotations) {
     const tags = ann.tags.length > 0 ? ann.tags : [''];
     for (const tag of tags) {
+      if (isAiSearchSystemTag(tag)) {
+        continue;
+      }
       if (!tagMap.has(tag)) tagMap.set(tag, []);
       tagMap.get(tag)!.push(ann);
     }
