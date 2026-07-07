@@ -1,6 +1,7 @@
 import sinon from 'sinon';
 
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
+import { FetchError } from '../../util/fetch';
 import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 import {
   TagInventoryGroupSyncService,
@@ -29,6 +30,7 @@ describe('TagInventoryGroupSyncService', () => {
     });
 
     fakeApi = {
+      search: sinon.stub().resolves({ total: 0, rows: [] }),
       group: {
         annotations: {
           read: groupAnnotationsRead,
@@ -169,29 +171,73 @@ describe('TagInventoryGroupSyncService', () => {
     assert.called(fakeStore.addTagInventoryRow);
   });
 
-  it('fetches all group annotations via getGroupAnnotations', async () => {
-    await svc.getGroupAnnotations('private-group');
+    it('fetches all group annotations via getGroupAnnotations', async () => {
+      await svc.getGroupAnnotations('private-group');
 
-    assert.calledOnce(groupAnnotationsRead);
-    assert.calledWith(
-      groupAnnotationsRead,
-      sinon.match({ pubid: 'private-group', 'page[size]': 100 }),
-    );
+      assert.calledOnce(groupAnnotationsRead);
+      assert.calledWith(
+        groupAnnotationsRead,
+        sinon.match({ pubid: 'private-group', 'page[size]': 100 }),
+      );
 
-    assert.calledWith(fakeStore.addTagInventoryRow, {
-      id: tagInventoryRowId('methods', 'find it', 'private-group'),
-      groupId: 'private-group',
-      schemaTag: 'methods',
-      query: 'find it',
-      annotationIds: [],
+      assert.calledWith(fakeStore.addTagInventoryRow, {
+        id: tagInventoryRowId('methods', 'find it', 'private-group'),
+        groupId: 'private-group',
+        schemaTag: 'methods',
+        query: 'find it',
+        annotationIds: [],
+      });
+      assert.calledWith(
+        fakeStore.setTagInventoryRowAnnotationIds,
+        tagInventoryRowId('methods', 'find it', 'private-group'),
+        ['a1'],
+      );
+      assert.calledOnce(fakeStore.pruneTagInventoryRowsForGroup);
     });
-    assert.calledWith(
-      fakeStore.setTagInventoryRowAnnotationIds,
-      tagInventoryRowId('methods', 'find it', 'private-group'),
-      ['a1'],
-    );
-    assert.calledOnce(fakeStore.pruneTagInventoryRowsForGroup);
-  });
+
+    it('falls back to search when group.annotations returns 404', async () => {
+      groupAnnotationsRead.rejects(
+        new FetchError(
+          'https://hypothes.is/api/groups/private-group/annotations',
+          new Response('', { status: 404 }),
+          'not authorized',
+        ),
+      );
+      fakeApi.search.resolves({
+        total: 1,
+        rows: [
+          {
+            id: 'a1',
+            group: 'private-group',
+            uri: 'http://other.com',
+            tags: ['methods', 'ai-user-approved'],
+            text: 'find it',
+            created: '2024-01-01T00:00:00Z',
+          },
+        ],
+      });
+
+      await svc.getGroupAnnotations('private-group');
+
+      assert.calledOnce(groupAnnotationsRead);
+      assert.calledOnce(fakeApi.search);
+      assert.calledWith(
+        fakeApi.search,
+        sinon.match({
+          group: 'private-group',
+          limit: 200,
+          sort: 'created',
+          order: 'desc',
+        }),
+      );
+      assert.calledWith(fakeStore.addTagInventoryRow, {
+        id: tagInventoryRowId('methods', 'find it', 'private-group'),
+        groupId: 'private-group',
+        schemaTag: 'methods',
+        query: 'find it',
+        annotationIds: [],
+      });
+    });
 
   it('sets annotationIds on document-scoped private group sync', async () => {
     await svc.getGroupAnnotations('private-group');

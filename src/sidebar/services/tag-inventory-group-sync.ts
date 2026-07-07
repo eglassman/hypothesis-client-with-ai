@@ -9,6 +9,7 @@ import {
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
 import { deriveTagInventoryRowDescriptors } from '../helpers/tag-inventory-group';
 import type { SidebarStore } from '../store';
+import { FetchError } from '../util/fetch';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
 import {
@@ -29,6 +30,9 @@ function focusedGroupWatchValuesEqual(
 /** Max page size accepted by `GET /api/groups/{pubid}/annotations`. */
 const GROUP_ANNOTATIONS_PAGE_SIZE = 100;
 
+/** Page size for `/api/search` fallback when the moderator-only group endpoint 404s. */
+const SEARCH_GROUP_ANNOTATIONS_PAGE_SIZE = 200;
+
 /** Hard cap on pages to guard against a non-advancing cursor. */
 const MAX_GROUP_ANNOTATION_PAGES = 1000;
 
@@ -46,13 +50,76 @@ export function savedAnnotationsForCurrentDocument(
 }
 
 /**
+ * Fetch every annotation in a group via `/api/search`.
+ *
+ * Used when `GET /api/groups/{pubid}/annotations` returns 404 for non-moderator
+ * members (that endpoint requires `group:moderate`).
+ */
+async function fetchAllGroupAnnotationsViaSearch(
+  api: APIService,
+  groupId: string,
+  signal: AbortSignal,
+): Promise<SavedAnnotation[]> {
+  const annotations: SavedAnnotation[] = [];
+  let searchAfter: string | undefined;
+  let expectedTotal: number | null = null;
+  let fetchedCount = 0;
+
+  for (let page = 0; page < MAX_GROUP_ANNOTATION_PAGES; page++) {
+    if (signal.aborted) {
+      break;
+    }
+
+    const searchQuery: Record<string, string | number | boolean> = {
+      group: groupId,
+      limit: SEARCH_GROUP_ANNOTATIONS_PAGE_SIZE,
+      sort: 'created',
+      order: 'desc',
+      _separate_replies: false,
+    };
+    if (searchAfter) {
+      searchQuery.search_after = searchAfter;
+    }
+
+    const result = await api.search(searchQuery, undefined, signal);
+    if (expectedTotal === null) {
+      expectedTotal = result.total;
+    }
+
+    const pageAnnotations = result.rows.concat(result.replies ?? []);
+    for (const ann of pageAnnotations) {
+      if (isSaved(ann)) {
+        annotations.push(ann);
+      }
+    }
+    fetchedCount += pageAnnotations.length;
+
+    const expectMore =
+      expectedTotal !== null &&
+      (fetchedCount < expectedTotal || expectedTotal > 1000);
+
+    let nextSearchAfter: string | undefined;
+    if (pageAnnotations.length > 0 && expectMore) {
+      nextSearchAfter = pageAnnotations[pageAnnotations.length - 1]?.created;
+    }
+
+    if (!nextSearchAfter || nextSearchAfter === searchAfter) {
+      break;
+    }
+    searchAfter = nextSearchAfter;
+  }
+
+  return annotations;
+}
+
+/**
  * Fetch every annotation in a group via `GET /api/groups/{pubid}/annotations`.
  *
  * This endpoint paginates with `page[after]` (a date-time cursor, "older than
- * this date") + `page[size]` and returns `{ meta, data }`, so it cannot reuse
- * `SearchClient` (which expects the `/api/search` `{ rows, total }` shape).
+ * this date") + `page[size]` and returns `{ meta, data }`. It requires the
+ * `group:moderate` permission, so non-moderator members receive 404.
  */
-async function fetchAllGroupAnnotations(
+async function fetchAllGroupAnnotationsViaGroupEndpoint(
   api: APIService,
   groupId: string,
   signal: AbortSignal,
@@ -93,6 +160,49 @@ async function fetchAllGroupAnnotations(
   }
 
   return annotations;
+}
+
+async function fetchAllGroupAnnotations(
+  api: APIService,
+  groupId: string,
+  signal: AbortSignal,
+  debugContext?: { profileUserid: string | null; groupType: string | null },
+): Promise<SavedAnnotation[]> {
+  // #region agent log
+  fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group annotations fetch start',data:{groupId,profileUserid:debugContext?.profileUserid??null,groupType:debugContext?.groupType??null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+
+  try {
+    const annotations = await fetchAllGroupAnnotationsViaGroupEndpoint(
+      api,
+      groupId,
+      signal,
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group endpoint succeeded',data:{groupId,count:annotations.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return annotations;
+  } catch (err) {
+    const status =
+      err instanceof FetchError ? err.response?.status ?? null : null;
+    if (status !== 404) {
+      throw err;
+    }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'group endpoint 404, falling back to search',data:{groupId,profileUserid:debugContext?.profileUserid??null,groupType:debugContext?.groupType??null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
+    const annotations = await fetchAllGroupAnnotationsViaSearch(
+      api,
+      groupId,
+      signal,
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'post-fix',hypothesisId:'A',location:'tag-inventory-group-sync.ts:fetchAllGroupAnnotations',message:'search fallback succeeded',data:{groupId,count:annotations.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    return annotations;
+  }
 }
 
 /**
@@ -237,10 +347,19 @@ export class TagInventoryGroupSyncService {
 
     const work = (async () => {
       try {
+        const focusedGroup = this._store.focusedGroup();
+        const profileUserid = this._store.profile()?.userid ?? null;
+        // #region agent log
+        fetch('http://127.0.0.1:7435/ingest/74e7273a-8561-44e5-a847-987878e88c59',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'f07d0d'},body:JSON.stringify({sessionId:'f07d0d',runId:'pre-fix',hypothesisId:'D',location:'tag-inventory-group-sync.ts:getGroupAnnotations',message:'getGroupAnnotations start',data:{groupId,force,profileUserid,hasFetchedProfile:this._store.hasFetchedProfile(),focusedGroupId:this._store.focusedGroupId(),groupType:focusedGroup?.type??null,isMember:focusedGroup?.isMember??null,groupInList:this._store.allGroups().some(g=>g.id===groupId)},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         const annotations = await fetchAllGroupAnnotations(
           this._api,
           groupId,
           controller.signal,
+          {
+            profileUserid,
+            groupType: focusedGroup?.type ?? null,
+          },
         );
         if (controller.signal.aborted) {
           throw new DOMException('Aborted', 'AbortError');

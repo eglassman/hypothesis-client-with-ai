@@ -454,6 +454,16 @@ function AISearchPanel({
         tagReference,
       });
 
+      console.log('[AISearch] Claude request', {
+        schemaTag: tagTrim,
+        searchQuery: query,
+        tagReference,
+        positiveExampleCount: positiveExamples.length,
+        negativeExampleCount: negativeExamples.length,
+        userMessage: fullUserMessage,
+        documentUri: claudeDocumentUri,
+      });
+
       const claudeRun = registerClaudeRun();
       if (!claudeRun) {
         toastMessenger.notice('AI search already in progress.');
