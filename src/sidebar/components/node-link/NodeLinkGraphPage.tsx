@@ -10,7 +10,11 @@ import {
   colorForTag,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
-import { emptyNodeLinkState, tagLegendText } from '../../node-link/graph-state';
+import {
+  contentTags,
+  emptyNodeLinkState,
+  tagLegendText,
+} from '../../node-link/graph-state';
 import type {
   DescriptiveTag,
   ManualTagEdge,
@@ -97,6 +101,53 @@ function findGroupByIdentifier(groupId: string, groups: Group[]) {
 
 function canonicalGroupId(groupId: string, groups: Group[]) {
   return findGroupByIdentifier(groupId, groups)?.id || groupId;
+}
+
+function annotationsForDocument(
+  annotations: Annotation[],
+  documentUri: string,
+) {
+  return documentUri
+    ? annotations.filter(annotation => annotation.uri === documentUri)
+    : annotations;
+}
+
+function semanticStateForDocumentFilter(
+  semanticState: NodeLinkSemanticState,
+  annotations: Annotation[],
+) {
+  const annotationTags = new Set<string>();
+  for (const annotation of annotations) {
+    for (const tag of contentTags(annotation.tags || [])) {
+      annotationTags.add(tag);
+    }
+  }
+
+  const descriptiveTags = new Set(
+    semanticState.descriptiveTags.map(item => item.tag),
+  );
+  const visibleDescriptiveTags = new Set<string>();
+  for (const edge of semanticState.tagEdges) {
+    if (
+      annotationTags.has(edge.sourceTag) &&
+      descriptiveTags.has(edge.targetTag)
+    ) {
+      visibleDescriptiveTags.add(edge.targetTag);
+    }
+    if (
+      annotationTags.has(edge.targetTag) &&
+      descriptiveTags.has(edge.sourceTag)
+    ) {
+      visibleDescriptiveTags.add(edge.sourceTag);
+    }
+  }
+
+  return {
+    ...semanticState,
+    descriptiveTags: semanticState.descriptiveTags.filter(item =>
+      visibleDescriptiveTags.has(item.tag),
+    ),
+  };
 }
 
 export function routeGroupToApply(
@@ -1636,6 +1687,7 @@ export function NodeLinkGraphPage({
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [semanticState, setSemanticState] =
     useState<NodeLinkSemanticState>(emptyNodeLinkState());
+  const [selectedDocumentUri, setSelectedDocumentUri] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -1655,12 +1707,14 @@ export function NodeLinkGraphPage({
     if (nextRouteGroup) {
       appliedRouteGroupRef.current = nextRouteGroup;
       setSelectedGroupId(nextRouteGroup);
+      setSelectedDocumentUri('');
     }
   }, [canonicalRouteGroup]);
 
   useEffect(() => {
     if (!selectedGroupId && fallbackGroupId) {
       setSelectedGroupId(fallbackGroupId);
+      setSelectedDocumentUri('');
     }
   }, [fallbackGroupId, selectedGroupId]);
 
@@ -1768,10 +1822,30 @@ export function NodeLinkGraphPage({
       });
   };
 
-  const graph = useMemo(
+  const graph = useMemo(() => {
+    const filteredAnnotations = annotationsForDocument(
+      annotations,
+      selectedDocumentUri,
+    );
+    const filteredSemanticState = selectedDocumentUri
+      ? semanticStateForDocumentFilter(semanticState, filteredAnnotations)
+      : semanticState;
+    return buildNodeLinkGraph(filteredAnnotations, filteredSemanticState);
+  }, [annotations, selectedDocumentUri, semanticState]);
+  const groupGraph = useMemo(
     () => buildNodeLinkGraph(annotations, semanticState),
     [annotations, semanticState],
   );
+  const documentOptions = groupGraph.documents;
+
+  useEffect(() => {
+    if (
+      selectedDocumentUri &&
+      !documentOptions.some(document => document.uri === selectedDocumentUri)
+    ) {
+      setSelectedDocumentUri('');
+    }
+  }, [documentOptions, selectedDocumentUri]);
 
   useEffect(() => {
     if (selectedTag && !graph.tags.some(tag => tag.tag === selectedTag)) {
@@ -1851,14 +1925,37 @@ export function NodeLinkGraphPage({
                 className="h-9 rounded border bg-white px-2"
                 value={selectedGroupId}
                 disabled={!isLoggedIn || !groups.length}
-                onChange={event =>
-                  setSelectedGroupId((event.target as HTMLSelectElement).value)
-                }
+                onChange={event => {
+                  setSelectedGroupId((event.target as HTMLSelectElement).value);
+                  setSelectedDocumentUri('');
+                }}
               >
                 {!groups.length && <option value="">No groups loaded</option>}
                 {groups.map(group => (
                   <option key={group.id} value={group.id}>
                     {groupLabel(group)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid min-w-[280px] gap-1 text-sm font-medium">
+              <span>Document</span>
+              <select
+                className="h-9 rounded border bg-white px-2"
+                value={selectedDocumentUri}
+                disabled={
+                  !isLoggedIn || status === 'loading' || !documentOptions.length
+                }
+                onChange={event =>
+                  setSelectedDocumentUri(
+                    (event.target as HTMLSelectElement).value,
+                  )
+                }
+              >
+                <option value="">All</option>
+                {documentOptions.map(document => (
+                  <option key={document.uri} value={document.uri}>
+                    {document.label}
                   </option>
                 ))}
               </select>

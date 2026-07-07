@@ -235,4 +235,48 @@ describe('NodeLinkGraphPage', () => {
     assert.lengthOf(fakeNodeLinkState.fetchGroupAnnotations.firstCall.args, 2);
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
+
+  it('filters the rendered graph to one document without refetching group annotations', async () => {
+    fakeStore.focusedGroupId.returns('private-group');
+    fakeStore.routeParams.returns({
+      group: 'private-group',
+      uri: 'https://example.com/launch-doc',
+    });
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-doc-a',
+        uri: 'https://example.com/doc-a',
+        exact: 'Evidence from document A',
+        tags: ['Character'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-doc-b',
+        uri: 'https://example.com/doc-b',
+        exact: 'Evidence from document B',
+        tags: ['Action'],
+      }),
+    ]);
+
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.text().includes('2 tags, 2 documents');
+    });
+
+    const documentSelect = wrapper.find('select').at(1);
+    assert.equal(documentSelect.prop('value'), '');
+    assert.include(documentSelect.text(), 'All');
+
+    documentSelect.props().onChange({
+      target: { value: 'https://example.com/doc-a' },
+    });
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.text().includes('1 tags, 1 documents');
+    });
+
+    assert.calledOnce(fakeNodeLinkState.fetchGroupAnnotations);
+  });
 });
