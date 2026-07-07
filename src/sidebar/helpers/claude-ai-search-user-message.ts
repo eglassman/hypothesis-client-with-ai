@@ -628,22 +628,23 @@ export function formatFewShotExampleLine(
   return `- tag: ${tag}\n  query: ${query}\n  quote: ${quoteText}\n`;
 }
 
-function formatTagReferenceLine(entry: TagReferencePromptEntry): string {
-  const flags = [`count=${entry.annotationCount}`];
-  if (entry.descriptive) {
-    flags.push('descriptive');
+function tagNameForReference(tag: string, descriptiveTags: Set<string>) {
+  return descriptiveTags.has(tag) ? `${tag} [descriptive]` : tag;
+}
+
+function formatTagReferenceLines(entries: TagReferencePromptEntry[]): string {
+  const descriptiveTags = new Set(
+    entries.filter(entry => entry.descriptive).map(entry => entry.tag),
+  );
+  let lines = '';
+  for (const entry of entries) {
+    const sourceTag = tagNameForReference(entry.tag, descriptiveTags);
+    for (const rel of entry.outgoingRelationships) {
+      const targetTag = tagNameForReference(rel.targetTag, descriptiveTags);
+      lines += `${sourceTag} ${rel.relationship} ${targetTag}\n`;
+    }
   }
-  const relationships = [
-    ...entry.outgoingRelationships.map(
-      rel => `-> ${rel.relationship} ${rel.targetTag}`,
-    ),
-    ...entry.incomingRelationships.map(
-      rel => `<- ${rel.sourceTag} ${rel.relationship}`,
-    ),
-  ];
-  return `- ${entry.tag} [${flags.join(', ')}]: ${
-    relationships.length ? relationships.join('; ') : 'none'
-  }\n`;
+  return lines;
 }
 
 export function buildClaudeAISearchUserMessage(params: {
@@ -662,13 +663,10 @@ export function buildClaudeAISearchUserMessage(params: {
   } = params;
   let body = '';
   if (tagReference?.length) {
-    body +=
-      'Tag reference (selected group; count=matching group annotations; arrows=manual relationships):\n';
+    body += 'Tag relationships for the selected group:\n';
     body +=
       'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.\n';
-    for (const entry of tagReference) {
-      body += formatTagReferenceLine(entry);
-    }
+    body += formatTagReferenceLines(tagReference);
     body += '\n';
   }
   if (positiveExamples.length > 0) {

@@ -111,7 +111,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       );
     });
 
-    it('prepends compact tag reference data when provided', () => {
+    it('prepends simple tag relationship lines when provided', () => {
       const out = buildClaudeAISearchUserMessage({
         positiveExamples: [],
         schemaTag: 's',
@@ -126,9 +126,20 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
             ],
             incomingRelationships: [],
           },
+          {
+            tag: 'Finding',
+            annotationCount: 1,
+            descriptive: true,
+            outgoingRelationships: [],
+            incomingRelationships: [
+              { sourceTag: 'Methods', relationship: 'supports' },
+            ],
+          },
         ],
       });
-      const referenceIdx = out.indexOf('Tag reference (selected group');
+      const referenceIdx = out.indexOf(
+        'Tag relationships for the selected group:',
+      );
       const questionIdx = out.indexOf(
         'What retrieved verbatim quotes from the document',
       );
@@ -139,7 +150,14 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         out,
         'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.',
       );
-      assert.include(out, '- Methods [count=2]: -> supports Finding\n');
+      assert.include(out, 'Methods supports Finding [descriptive]\n');
+      assert.lengthOf(
+        out.match(/Methods supports Finding \[descriptive\]/g) || [],
+        1,
+      );
+      assert.notInclude(out, '<-');
+      assert.notInclude(out, '->');
+      assert.notInclude(out, 'count=');
       assert.notInclude(out, '"outgoingRelationships"');
     });
 

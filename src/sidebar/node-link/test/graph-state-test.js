@@ -245,7 +245,7 @@ describe('node-link graph state helpers', () => {
     });
   });
 
-  it('builds prompt-ready tag reference data', () => {
+  it('builds prompt-ready tag reference data for relationship-linked tags', () => {
     const state = emptyNodeLinkState({
       descriptiveTags: [{ id: 'desc-theme', tag: 'Theme' }],
       tagEdges: [
@@ -267,6 +267,7 @@ describe('node-link graph state helpers', () => {
       [
         { group: 'group-a', tags: ['Character', 'Character'] },
         { group: 'group-a', tags: ['Theme', 'ai-pending'] },
+        { group: 'group-a', tags: ['QuoteOnly'] },
         { group: 'group-b', tags: ['Other'] },
       ],
       'group-a',
