@@ -1619,8 +1619,6 @@ export function NodeLinkGraphPage({
   const groups = store.allGroups();
   const hasFetchedProfile = store.hasFetchedProfile();
   const isLoggedIn = store.isLoggedIn();
-  const documentUri =
-    routeParams.uri || store.searchUris()[0] || store.mainFrame()?.uri || '';
   const tagColors = store.tagInventorySchemaTagColors();
   const routeGroup = routeGroupParam(routeParams);
   const focusedGroupId = store.focusedGroupId() || '';
@@ -1669,7 +1667,7 @@ export function NodeLinkGraphPage({
   const loadGraph = (force = false) => {
     const selectedGroup = findGroupByIdentifier(selectedGroupId, groups);
     const groupId = selectedGroup?.id || selectedGroupId;
-    const loadKey = `${groupId}\0${documentUri}`;
+    const loadKey = groupId;
     const waitingForGroups = Boolean(selectedGroupId) && groups.length === 0;
     const unresolvedGroupIdentifier =
       Boolean(selectedGroupId) && groups.length > 0 && !selectedGroup;
@@ -1696,9 +1694,7 @@ export function NodeLinkGraphPage({
     setMessage('');
 
     Promise.all([
-      nodeLinkState.fetchGroupAnnotations(groupId, controller.signal, {
-        uri: documentUri,
-      }),
+      nodeLinkState.fetchGroupAnnotations(groupId, controller.signal),
       nodeLinkState.loadState(groupId),
     ])
       .then(([fetchedAnnotations, loadedState]) => {
@@ -1737,7 +1733,6 @@ export function NodeLinkGraphPage({
   };
 
   useEffect(loadGraph, [
-    documentUri,
     groups,
     groups.length,
     isLoggedIn,

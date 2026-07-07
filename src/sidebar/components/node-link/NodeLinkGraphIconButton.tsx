@@ -43,7 +43,6 @@ export function extensionNodeLinkUrl(href = window.location.href) {
 export default function NodeLinkGraphIconButton() {
   const store = useSidebarStore();
   const groupId = store.focusedGroupId();
-  const documentUri = store.searchUris()[0] || store.mainFrame()?.uri || '';
   const nodeLinkUrl = extensionNodeLinkUrl();
 
   const openGraph = useCallback(() => {
@@ -55,11 +54,8 @@ export default function NodeLinkGraphIconButton() {
     if (groupId) {
       url.searchParams.set('group', groupId);
     }
-    if (documentUri) {
-      url.searchParams.set('uri', documentUri);
-    }
     window.open(url.toString(), '_blank', 'noopener');
-  }, [documentUri, groupId, nodeLinkUrl]);
+  }, [groupId, nodeLinkUrl]);
 
   if (!nodeLinkUrl) {
     return null;

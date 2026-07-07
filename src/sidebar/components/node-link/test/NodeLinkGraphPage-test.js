@@ -119,6 +119,21 @@ describe('NodeLinkGraphPage', () => {
   let fakeStore;
   let fakeNodeLinkState;
 
+  function evidenceAnnotation({ id, uri, exact, tags = ['Shared Tag'] }) {
+    return {
+      id,
+      group: 'private-group',
+      uri,
+      tags,
+      target: [
+        {
+          source: uri,
+          selector: [{ type: 'TextQuoteSelector', exact }],
+        },
+      ],
+    };
+  }
+
   function createComponent() {
     return mount(
       <NodeLinkGraphPage
@@ -188,6 +203,36 @@ describe('NodeLinkGraphPage', () => {
     wrapper.update();
 
     assert.equal(wrapper.find('select').first().prop('value'), 'private-group');
+    assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
+  });
+
+  it('loads the selected group graph across documents instead of the launch document only', async () => {
+    fakeStore.focusedGroupId.returns('private-group');
+    fakeStore.routeParams.returns({
+      group: 'private-group',
+      uri: 'https://example.com/launch-doc',
+    });
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-doc-a',
+        uri: 'https://example.com/doc-a',
+        exact: 'Evidence from document A',
+      }),
+      evidenceAnnotation({
+        id: 'ann-doc-b',
+        uri: 'https://example.com/doc-b',
+        exact: 'Evidence from document B',
+      }),
+    ]);
+
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.text().includes('1 tags, 2 documents');
+    });
+
+    assert.lengthOf(fakeNodeLinkState.fetchGroupAnnotations.firstCall.args, 2);
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
 });
