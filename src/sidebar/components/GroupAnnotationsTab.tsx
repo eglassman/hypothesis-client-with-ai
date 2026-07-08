@@ -84,6 +84,20 @@ function mergeAdjacentSpans(spans: ApiSpan[]): ApiSpan[] {
   return merged;
 }
 
+async function fetchSuggestCategories(segments: string[]): Promise<CategoryRow[]> {
+  const response = await fetch(
+    'https://phrase-labeler.onrender.com/suggest-categories',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ segments }) },
+  );
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Category suggestion error: ${response.status} ${errText}`);
+  }
+  const data = await response.json();
+  const cats = (data.categories ?? []) as { label: string; description: string }[];
+  return cats.map(c => ({ name: c.label, description: c.description }));
+}
+
 async function fetchSpansBatch(
   sentences: string[],
   categories?: string[],
@@ -276,7 +290,17 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
     setIsHighlighting(true);
     setHighlightError(null);
     try {
-      const validRows = categoryRows.filter(r => r.name.trim().length > 0);
+      let validRows = categoryRows.filter(r => r.name.trim().length > 0);
+
+      if (validRows.length === 0) {
+        const allSentences = annotations
+          .map(ann => (annotationQuote(ann) ?? '').trim())
+          .filter(s => s.length > 0);
+        const suggested = await fetchSuggestCategories(allSentences);
+        setCategoryRows(suggested);
+        validRows = suggested;
+      }
+
       const categories = validRows.length > 0 ? validRows.map(r => r.name.trim()) : undefined;
       const categoryDescriptions = validRows.length > 0 ? validRows.map(r => r.description.trim()) : undefined;
 
@@ -637,7 +661,7 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
       tagMap.get(tag)!.push(ann);
     }
   }
-  const sortedTags = [...tagMap.keys()].filter(t => t !== '').sort((a, b) => a.localeCompare(b));
+  const sortedTags = [...tagMap.keys()].filter(t => t !== '' && !t.startsWith('node-link-state')).sort((a, b) => a.localeCompare(b));
   if (tagMap.has('')) sortedTags.push('');
 
   return (
