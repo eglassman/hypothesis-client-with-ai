@@ -5,6 +5,6 @@ import {
 
 export type TagComboboxProps = SearchableComboboxProps;
 
-export function TagCombobox({ ...props }: TagComboboxProps) {
+export function TagCombobox(props: TagComboboxProps) {
   return <SearchableCombobox {...props} />;
 }
