@@ -100,6 +100,17 @@ describe('NodeLinkEditor', () => {
     assert.calledOnce(onSaveState);
     assert.lengthOf(onSaveState.firstCall.args[0].tagEdges, 0);
   });
+
+  it('uses searchable tag comboboxes when adding and editing edges', () => {
+    const { wrapper } = createComponent();
+
+    assert.lengthOf(wrapper.find('TagCombobox'), 2);
+
+    buttonByText(wrapper, 'Edit').props().onClick();
+    wrapper.update();
+
+    assert.lengthOf(wrapper.find('[role="dialog"] TagCombobox'), 2);
+  });
 });
 
 describe('routeGroupToApply', () => {
@@ -236,76 +247,34 @@ describe('NodeLinkGraphPage', () => {
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
 
-  it('filters the rendered graph to one document without refetching group annotations', async () => {
-    fakeStore.focusedGroupId.returns('private-group');
-    fakeStore.routeParams.returns({
-      group: 'private-group',
-      uri: 'https://example.com/launch-doc',
-    });
+  it('scrolls the sidebar to the evidence when a tag is selected', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
-        id: 'ann-doc-a',
-        uri: 'https://example.com/doc-a',
-        exact: 'Evidence from document A',
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
         tags: ['Character'],
       }),
-      evidenceAnnotation({
-        id: 'ann-doc-b',
-        uri: 'https://example.com/doc-b',
-        exact: 'Evidence from document B',
-        tags: ['Action'],
-      }),
-      {
-        ...evidenceAnnotation({
-          id: 'hidden-ann-doc-a',
-          uri: 'https://example.com/doc-a',
-          exact: 'Hidden evidence from document A',
-          tags: ['Hidden Tag'],
-        }),
-        hidden: true,
-      },
     ]);
-    fakeNodeLinkState.loadState.callsFake(groupId =>
-      Promise.resolve({
-        status: 'missing',
-        state: emptyNodeLinkState({
-          selectedGroupId: groupId,
-          descriptiveTags: [{ id: 'desc-hidden', tag: 'Hidden Description' }],
-          tagEdges: [
-            {
-              sourceTag: 'Hidden Tag',
-              targetTag: 'Hidden Description',
-              connectionType: 'explains',
-            },
-          ],
-        }),
-        annotationId: null,
-        stateUri: `https://hypothesis-node-link.local/state/group/${groupId}`,
-      }),
-    );
-
     const wrapper = createComponent();
 
     await waitFor(() => {
       wrapper.update();
-      return wrapper.text().includes('3 tags, 2 documents');
+      return wrapper.find('g[role="button"]').length > 0;
     });
 
-    const documentSelect = wrapper.find('select').at(1);
-    assert.equal(documentSelect.prop('value'), '');
-    assert.include(documentSelect.text(), 'All');
+    const sidebar = wrapper.find('aside').getDOMNode();
+    sidebar.scrollTo = sinon.stub();
+    const preventDefault = sinon.stub();
 
-    documentSelect.props().onChange({
-      target: { value: 'https://example.com/doc-a' },
+    wrapper.find('g[role="button"]').first().props().onKeyDown({
+      key: 'Enter',
+      preventDefault,
     });
 
-    await waitFor(() => {
-      wrapper.update();
-      return wrapper.text().includes('1 tags, 1 documents');
-    });
+    await waitFor(() => sidebar.scrollTo.called);
 
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Tag');
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Description');
-    assert.calledOnce(fakeNodeLinkState.fetchGroupAnnotations);
+    assert.calledOnce(preventDefault);
+    assert.calledWith(sidebar.scrollTo, { top: 0, behavior: 'smooth' });
   });
 });

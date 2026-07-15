@@ -27,6 +27,7 @@ import type { NodeLinkStateService } from '../../services/node-link-state';
 import type { SessionService } from '../../services/session';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
+import { TagCombobox } from './TagCombobox';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -1371,21 +1372,15 @@ export function NodeLinkEditor({
         {addMode === 'edge' ? (
           <div className="space-y-3">
             <div className="grid gap-2">
-              <select
-                className="h-9 rounded border bg-white px-2 text-sm"
+              <TagCombobox
+                id="new-edge-source-tag"
+                ariaLabel="Source tag"
+                options={tags}
                 value={edgeSource}
                 disabled={!canEdit}
-                onChange={event =>
-                  setEdgeSource((event.target as HTMLSelectElement).value)
-                }
-              >
-                <option value="">Source tag</option>
-                {tags.map(tag => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
+                placeholder="Source tag"
+                onChange={setEdgeSource}
+              />
               <input
                 className="h-9 rounded border px-2 text-sm"
                 value={edgeRelationship}
@@ -1395,21 +1390,15 @@ export function NodeLinkEditor({
                   setEdgeRelationship((event.target as HTMLInputElement).value)
                 }
               />
-              <select
-                className="h-9 rounded border bg-white px-2 text-sm"
+              <TagCombobox
+                id="new-edge-target-tag"
+                ariaLabel="Target tag"
+                options={tags}
                 value={edgeTarget}
                 disabled={!canEdit}
-                onChange={event =>
-                  setEdgeTarget((event.target as HTMLSelectElement).value)
-                }
-              >
-                <option value="">Target tag</option>
-                {tags.map(tag => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
+                placeholder="Target tag"
+                onChange={setEdgeTarget}
+              />
             </div>
             <div className="flex gap-2">
               <Button
@@ -1579,27 +1568,29 @@ export function NodeLinkEditor({
         <EditModal title="Edit edge" onClose={closeEditModal}>
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,1.2fr)_minmax(0,1fr)]">
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-source-tag"
+              >
                 Source Tag
-                <select
-                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                <TagCombobox
+                  id="edit-edge-source-tag"
+                  ariaLabel="Source tag"
+                  inputClassName="h-10"
+                  options={tags}
                   value={editEdgeSource}
                   disabled={!canEdit}
-                  onChange={event =>
-                    setEditEdgeSource((event.target as HTMLSelectElement).value)
-                  }
-                >
-                  <option value="">Source tag</option>
-                  {tags.map(tag => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Source tag"
+                  onChange={setEditEdgeSource}
+                />
               </label>
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-relationship"
+              >
                 Relationship
                 <input
+                  id="edit-edge-relationship"
                   className="h-10 rounded border px-2 text-sm font-normal normal-case text-color-text"
                   value={editEdgeRelationship}
                   disabled={!canEdit}
@@ -1611,23 +1602,21 @@ export function NodeLinkEditor({
                   }
                 />
               </label>
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-target-tag"
+              >
                 Target Tag
-                <select
-                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                <TagCombobox
+                  id="edit-edge-target-tag"
+                  ariaLabel="Target tag"
+                  inputClassName="h-10"
+                  options={tags}
                   value={editEdgeTarget}
                   disabled={!canEdit}
-                  onChange={event =>
-                    setEditEdgeTarget((event.target as HTMLSelectElement).value)
-                  }
-                >
-                  <option value="">Target tag</option>
-                  {tags.map(tag => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Target tag"
+                  onChange={setEditEdgeTarget}
+                />
               </label>
             </div>
             <div className="flex justify-end gap-2">
@@ -1706,6 +1695,7 @@ export function NodeLinkGraphPage({
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const activeLoadRef = useRef<{
     controller: AbortController;
     loadKey: string;
@@ -1879,6 +1869,13 @@ export function NodeLinkGraphPage({
   const selectedEdge =
     graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId) || null;
 
+  useEffect(() => {
+    if (!selectedTag && !selectedEdgeId) {
+      return;
+    }
+    sidebarRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [selectedEdgeId, selectedTag]);
+
   const selectTag = (tag: string) => {
     setSelectedTag(tag);
     setSelectedEdgeId('');
@@ -2032,7 +2029,10 @@ export function NodeLinkGraphPage({
           )}
         </main>
 
-        <aside className="w-[390px] shrink-0 overflow-auto border-l bg-white p-4">
+        <aside
+          className="w-[390px] shrink-0 overflow-auto border-l bg-white p-4"
+          ref={sidebarRef}
+        >
           <div className="space-y-5">
             <EvidencePanel
               graph={graph}
