@@ -80,6 +80,7 @@ import {
   isRateLimitFetchError,
   retryOnRateLimit,
 } from '../../util/retry-on-rate-limit';
+import { SearchableCombobox } from '../SearchableCombobox';
 import SidebarPanel from '../SidebarPanel';
 import SearchField from './SearchField';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
@@ -253,6 +254,16 @@ function AISearchPanel({
         showHiddenRows ? scopedRows : scopedRows.filter(r => !r.hidden),
       ),
     [scopedRows, showHiddenRows],
+  );
+  const schemaTagOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(schemaTagColors),
+          ...scopedRows.map(row => row.schemaTag.trim()).filter(Boolean),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [schemaTagColors, scopedRows],
   );
   const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
   const annotationsForInventoryCount = useMemo(() => {
@@ -987,20 +998,15 @@ function AISearchPanel({
                 claude.setApiKey(value);
               }}
             />
-            <Input
-              aria-label="schema tag"
-              classes="text-base touch:text-touch-base"
-              data-testid="schema-tag-input"
-              dir="auto"
-              name="schema-tag"
+            <SearchableCombobox
+              id="schema-tag-input"
+              ariaLabel="Schema tag"
+              options={schemaTagOptions}
+              allowCustomValue
+              inputClassName="h-10 text-base touch:text-touch-base"
               placeholder="Tag"
-              type="text"
               value={schemaTag}
-              onInput={(e: Event) => {
-                store.setAISearchPanelSchemaTagInput(
-                  (e.target as HTMLInputElement).value,
-                );
-              }}
+              onChange={value => store.setAISearchPanelSchemaTagInput(value)}
             />
             <SearchField
               inputRef={inputRef}

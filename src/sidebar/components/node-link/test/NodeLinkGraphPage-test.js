@@ -111,6 +111,50 @@ describe('NodeLinkEditor', () => {
 
     assert.lengthOf(wrapper.find('[role="dialog"] TagCombobox'), 2);
   });
+
+  it('suggests relationship types and filters the manual edge list', () => {
+    const semanticState = emptyNodeLinkState({
+      tagEdges: [
+        {
+          id: 'edge-character-action',
+          sourceTag: 'Character',
+          targetTag: 'Action',
+          connectionType: 'explains',
+        },
+        {
+          id: 'edge-action-character',
+          sourceTag: 'Action',
+          targetTag: 'Character',
+          connectionType: 'supports',
+        },
+      ],
+    });
+    const { wrapper } = createComponent({ semanticState });
+    const relationshipInput = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'new-edge-relationship');
+    const edgeFilter = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'manual-edge-filter');
+
+    assert.deepEqual(relationshipInput.prop('options'), [
+      'explains',
+      'supports',
+    ]);
+
+    edgeFilter.props().onChange('supports');
+    wrapper.update();
+
+    assert.include(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'supports',
+    );
+    assert.notInclude(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'explains',
+    );
+    assert.include(wrapper.text(), '1/2');
+  });
 });
 
 describe('routeGroupToApply', () => {
@@ -263,11 +307,19 @@ describe('NodeLinkGraphPage', () => {
       return wrapper.find('g[role="button"]').length > 0;
     });
 
+    const nodeFinder = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'node-link-node-finder');
+    assert.deepEqual(nodeFinder.prop('options'), ['Character']);
+
     wrapper.find('#node-link-editor-tab').props().onClick();
     wrapper.update();
 
     const relationshipInput = wrapper.find('input[placeholder="relationship"]');
-    relationshipInput.props().onInput({ target: { value: 'supports' } });
+    relationshipInput.props().onInput({
+      currentTarget: { value: 'supports' },
+      target: { value: 'supports' },
+    });
     wrapper.update();
 
     const detailsPanel = wrapper.find('#node-link-details-panel').getDOMNode();

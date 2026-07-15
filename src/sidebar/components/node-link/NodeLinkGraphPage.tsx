@@ -27,6 +27,7 @@ import type { NodeLinkStateService } from '../../services/node-link-state';
 import type { SessionService } from '../../services/session';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
+import { SearchableCombobox } from '../SearchableCombobox';
 import { TagCombobox } from './TagCombobox';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
@@ -1042,6 +1043,7 @@ export function NodeLinkEditor({
   const [addMode, setAddMode] = useState<AddMode>('edge');
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [formMessage, setFormMessage] = useState('');
+  const [edgeFilter, setEdgeFilter] = useState('');
 
   useEffect(() => {
     if (!edgeSource && selectedTag && tags.includes(selectedTag)) {
@@ -1308,6 +1310,24 @@ export function NodeLinkEditor({
   };
 
   const canEdit = tags.length > 1;
+  const relationshipOptions = Array.from(
+    new Set(
+      semanticState.tagEdges
+        .map(edge => edge.connectionType.trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+  const edgeFilterOptions = Array.from(
+    new Set([...tags, ...relationshipOptions]),
+  ).sort((a, b) => a.localeCompare(b));
+  const normalizedEdgeFilter = edgeFilter.trim().toLocaleLowerCase();
+  const filteredManualEdges = normalizedEdgeFilter
+    ? semanticState.tagEdges.filter(edge =>
+        [edge.sourceTag, edge.connectionType, edge.targetTag].some(value =>
+          value.toLocaleLowerCase().includes(normalizedEdgeFilter),
+        ),
+      )
+    : semanticState.tagEdges;
 
   return (
     <div className="space-y-5">
@@ -1382,14 +1402,15 @@ export function NodeLinkEditor({
                 placeholder="Source tag"
                 onChange={setEdgeSource}
               />
-              <input
-                className="h-9 rounded border px-2 text-sm"
+              <SearchableCombobox
+                id="new-edge-relationship"
+                ariaLabel="Relationship"
+                options={relationshipOptions}
+                allowCustomValue
                 value={edgeRelationship}
                 disabled={!canEdit}
                 placeholder="relationship"
-                onInput={event =>
-                  setEdgeRelationship((event.target as HTMLInputElement).value)
-                }
+                onChange={setEdgeRelationship}
               />
               <TagCombobox
                 id="new-edge-target-tag"
@@ -1434,7 +1455,12 @@ export function NodeLinkEditor({
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-bold">Manual edges</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold">Manual edges</h4>
+            <span className="rounded-full bg-grey-2 px-2 py-0.5 text-xs font-bold text-grey-6">
+              {filteredManualEdges.length}/{semanticState.tagEdges.length}
+            </span>
+          </div>
           <Button
             onClick={exportLegend}
             disabled={!semanticState.tagEdges.length}
@@ -1443,54 +1469,89 @@ export function NodeLinkEditor({
             Export
           </Button>
         </div>
+        {semanticState.tagEdges.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <SearchableCombobox
+                id="manual-edge-filter"
+                ariaLabel="Filter manual edges"
+                options={edgeFilterOptions}
+                allowCustomValue
+                value={edgeFilter}
+                placeholder="Filter by tag or relationship"
+                onChange={setEdgeFilter}
+              />
+            </div>
+            {edgeFilter && (
+              <button
+                className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+                type="button"
+                onClick={() => setEdgeFilter('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
         {semanticState.tagEdges.length ? (
-          <ul className="max-h-52 space-y-2 overflow-auto pr-1">
-            {semanticState.tagEdges.map(edge => {
-              const id = edgeId(edge);
-              const confirmingDelete =
-                pendingDelete?.type === 'edge' && pendingDelete.id === id;
-              return (
-                <li className="rounded border px-3 py-2 text-sm" key={id}>
-                  <div className="leading-6">
-                    <RelationshipSentence edge={edge} tagColors={tagColors} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {confirmingDelete ? (
-                      <>
-                        <span className="text-xs font-bold text-red-6">
-                          Confirm delete?
-                        </span>
-                        <EditorActionButton
-                          variant="danger"
-                          onClick={() => deleteEdge(edge)}
-                        >
-                          Yes
-                        </EditorActionButton>
-                        <EditorActionButton
-                          variant="secondary"
-                          onClick={() => setPendingDelete(null)}
-                        >
-                          No
-                        </EditorActionButton>
-                      </>
-                    ) : (
-                      <>
-                        <EditorActionButton onClick={() => editEdge(edge)}>
-                          Edit
-                        </EditorActionButton>
-                        <EditorActionButton
-                          variant="danger"
-                          onClick={() => setPendingDelete({ type: 'edge', id })}
-                        >
-                          Delete
-                        </EditorActionButton>
-                      </>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          filteredManualEdges.length ? (
+            <ul
+              className="max-h-52 space-y-2 overflow-auto pr-1"
+              data-testid="manual-edge-list"
+            >
+              {filteredManualEdges.map(edge => {
+                const id = edgeId(edge);
+                const confirmingDelete =
+                  pendingDelete?.type === 'edge' && pendingDelete.id === id;
+                return (
+                  <li className="rounded border px-3 py-2 text-sm" key={id}>
+                    <div className="leading-6">
+                      <RelationshipSentence edge={edge} tagColors={tagColors} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {confirmingDelete ? (
+                        <>
+                          <span className="text-xs font-bold text-red-6">
+                            Confirm delete?
+                          </span>
+                          <EditorActionButton
+                            variant="danger"
+                            onClick={() => deleteEdge(edge)}
+                          >
+                            Yes
+                          </EditorActionButton>
+                          <EditorActionButton
+                            variant="secondary"
+                            onClick={() => setPendingDelete(null)}
+                          >
+                            No
+                          </EditorActionButton>
+                        </>
+                      ) : (
+                        <>
+                          <EditorActionButton onClick={() => editEdge(edge)}>
+                            Edit
+                          </EditorActionButton>
+                          <EditorActionButton
+                            variant="danger"
+                            onClick={() =>
+                              setPendingDelete({ type: 'edge', id })
+                            }
+                          >
+                            Delete
+                          </EditorActionButton>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-grey-6">
+              No manual edges match this filter.
+            </p>
+          )
         ) : (
           <p className="text-sm text-grey-6">No manual tag-tag edges yet.</p>
         )}
@@ -1590,17 +1651,16 @@ export function NodeLinkEditor({
                 htmlFor="edit-edge-relationship"
               >
                 Relationship
-                <input
+                <SearchableCombobox
                   id="edit-edge-relationship"
-                  className="h-10 rounded border px-2 text-sm font-normal normal-case text-color-text"
+                  ariaLabel="Relationship"
+                  inputClassName="h-10"
+                  options={relationshipOptions}
+                  allowCustomValue
                   value={editEdgeRelationship}
                   disabled={!canEdit}
                   placeholder="relationship"
-                  onInput={event =>
-                    setEditEdgeRelationship(
-                      (event.target as HTMLInputElement).value,
-                    )
-                  }
+                  onChange={setEditEdgeRelationship}
                 />
               </label>
               <label
@@ -1978,7 +2038,7 @@ export function NodeLinkGraphPage({
       <div className="flex min-h-0 flex-1">
         <main className="grid min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 p-4">
           <section className="rounded border bg-white p-3">
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="grid min-w-0 gap-1 text-sm font-medium">
                 <span>Group</span>
                 <select
@@ -1999,6 +2059,21 @@ export function NodeLinkGraphPage({
                     </option>
                   ))}
                 </select>
+              </label>
+              <label
+                className="grid min-w-0 gap-1 text-sm font-medium"
+                htmlFor="node-link-node-finder"
+              >
+                <span>Find node</span>
+                <SearchableCombobox
+                  id="node-link-node-finder"
+                  ariaLabel="Find node"
+                  options={tagOptions(graph)}
+                  value={selectedTag}
+                  disabled={status === 'loading' || !graph.tags.length}
+                  placeholder="Search tags"
+                  onChange={selectTag}
+                />
               </label>
               {/* Document filter disabled — always show all documents in the group.
               <label className="grid min-w-0 gap-1 text-sm font-medium">
