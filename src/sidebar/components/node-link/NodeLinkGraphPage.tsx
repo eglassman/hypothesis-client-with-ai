@@ -32,6 +32,7 @@ import { TagCombobox } from './TagCombobox';
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type AddMode = 'edge' | 'tag';
+type SidebarView = 'details' | 'edit';
 type PendingDelete =
   | { type: 'edge'; id: string }
   | { type: 'tag'; id: string }
@@ -1309,7 +1310,7 @@ export function NodeLinkEditor({
   const canEdit = tags.length > 1;
 
   return (
-    <div className="space-y-5 border-t pt-5">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-bold uppercase text-grey-6">Edit graph</h3>
         <span
@@ -1693,9 +1694,13 @@ export function NodeLinkGraphPage({
   const [selectedDocumentUri, setSelectedDocumentUri] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
+  const [sidebarView, setSidebarView] = useState<SidebarView>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
-  const sidebarRef = useRef<HTMLElement | null>(null);
+  const detailsPanelRef = useRef<HTMLDivElement | null>(null);
+  const detailsTabRef = useRef<HTMLButtonElement | null>(null);
+  const editorTabRef = useRef<HTMLButtonElement | null>(null);
+  const inspectedSelectionRef = useRef('');
   const activeLoadRef = useRef<{
     controller: AbortController;
     loadKey: string;
@@ -1868,13 +1873,22 @@ export function NodeLinkGraphPage({
 
   const selectedEdge =
     graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId) || null;
+  const selectionKey = selectedEdgeId
+    ? `edge:${selectedEdgeId}`
+    : selectedTag
+      ? `tag:${selectedTag}`
+      : '';
 
   useEffect(() => {
-    if (!selectedTag && !selectedEdgeId) {
+    if (
+      sidebarView !== 'details' ||
+      inspectedSelectionRef.current === selectionKey
+    ) {
       return;
     }
-    sidebarRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [selectedEdgeId, selectedTag]);
+    inspectedSelectionRef.current = selectionKey;
+    detailsPanelRef.current?.scrollTo({ top: 0 });
+  }, [selectionKey, sidebarView]);
 
   const selectTag = (tag: string) => {
     setSelectedTag(tag);
@@ -1884,6 +1898,40 @@ export function NodeLinkGraphPage({
   const selectEdge = (id: string) => {
     setSelectedEdgeId(current => (current === id ? '' : id));
     setSelectedTag('');
+  };
+
+  const clearSelection = () => {
+    setSelectedTag('');
+    setSelectedEdgeId('');
+  };
+
+  const showSidebarView = (view: SidebarView, focusTab = false) => {
+    setSidebarView(view);
+    if (focusTab) {
+      (view === 'details' ? detailsTabRef : editorTabRef).current?.focus();
+    }
+  };
+
+  const handleSidebarTabKeyDown = (
+    event: JSX.TargetedKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    let nextView: SidebarView | null = null;
+    if (event.key === 'Home') {
+      nextView = 'details';
+    } else if (event.key === 'End') {
+      nextView = 'edit';
+    } else if (
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown'
+    ) {
+      nextView = sidebarView === 'details' ? 'edit' : 'details';
+    }
+    if (nextView) {
+      event.preventDefault();
+      showSidebarView(nextView, true);
+    }
   };
 
   const login = async () => {
@@ -2021,19 +2069,113 @@ export function NodeLinkGraphPage({
               tagColors={tagColors}
               onSelectTag={selectTag}
               onSelectEdge={selectEdge}
-              onClearSelection={() => {
-                setSelectedTag('');
-                setSelectedEdgeId('');
-              }}
+              onClearSelection={clearSelection}
             />
           )}
         </main>
 
-        <aside
-          className="w-[390px] shrink-0 overflow-auto border-l bg-white p-4"
-          ref={sidebarRef}
-        >
-          <div className="space-y-5">
+        <aside className="flex min-h-0 w-[390px] shrink-0 flex-col border-l bg-white">
+          <header className="flex items-start justify-between gap-3 border-b bg-grey-1 px-4 py-3">
+            <div className="min-w-0" data-testid="node-link-selection-summary">
+              <div className="text-xs font-bold uppercase text-grey-6">
+                {selectedEdge
+                  ? 'Relationship selected'
+                  : selectedTag
+                    ? 'Tag selected'
+                    : 'Graph inspector'}
+              </div>
+              <div
+                className="mt-0.5 truncate text-sm font-bold text-color-text"
+                title={
+                  selectedEdge
+                    ? `${selectedEdge.sourceTag} ${selectedEdge.connectionType} ${selectedEdge.targetTag}`
+                    : selectedTag || undefined
+                }
+              >
+                {selectedEdge
+                  ? `${selectedEdge.sourceTag} ${selectedEdge.connectionType} ${selectedEdge.targetTag}`
+                  : selectedTag || 'Select a node or relationship'}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {sidebarView === 'edit' && selectionKey && (
+                <button
+                  className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={() => showSidebarView('details', true)}
+                >
+                  View details
+                </button>
+              )}
+              {selectionKey && (
+                <button
+                  className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={clearSelection}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </header>
+
+          <div
+            className="grid grid-cols-2 border-b bg-white px-3 pt-2"
+            role="tablist"
+            aria-label="Graph sidebar views"
+          >
+            <button
+              id="node-link-details-tab"
+              className={classnames(
+                '-mb-px border-b-2 px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                {
+                  'border-brand text-brand': sidebarView === 'details',
+                  'border-transparent text-grey-6 hover:text-color-text':
+                    sidebarView !== 'details',
+                },
+              )}
+              type="button"
+              role="tab"
+              aria-controls="node-link-details-panel"
+              aria-selected={sidebarView === 'details'}
+              tabIndex={sidebarView === 'details' ? 0 : -1}
+              onClick={() => showSidebarView('details')}
+              onKeyDown={handleSidebarTabKeyDown}
+              ref={detailsTabRef}
+            >
+              Details
+            </button>
+            <button
+              id="node-link-editor-tab"
+              className={classnames(
+                '-mb-px border-b-2 px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                {
+                  'border-brand text-brand': sidebarView === 'edit',
+                  'border-transparent text-grey-6 hover:text-color-text':
+                    sidebarView !== 'edit',
+                },
+              )}
+              type="button"
+              role="tab"
+              aria-controls="node-link-editor-panel"
+              aria-selected={sidebarView === 'edit'}
+              tabIndex={sidebarView === 'edit' ? 0 : -1}
+              onClick={() => showSidebarView('edit')}
+              onKeyDown={handleSidebarTabKeyDown}
+              ref={editorTabRef}
+            >
+              Edit graph
+            </button>
+          </div>
+
+          <div
+            id="node-link-details-panel"
+            className="min-h-0 flex-1 overflow-auto p-4"
+            role="tabpanel"
+            aria-labelledby="node-link-details-tab"
+            hidden={sidebarView !== 'details'}
+            ref={detailsPanelRef}
+          >
             <EvidencePanel
               graph={graph}
               selectedTag={selectedTag}
@@ -2041,6 +2183,14 @@ export function NodeLinkGraphPage({
               tagColors={tagColors}
               onSelectEdge={selectEdge}
             />
+          </div>
+          <div
+            id="node-link-editor-panel"
+            className="min-h-0 flex-1 overflow-auto p-4"
+            role="tabpanel"
+            aria-labelledby="node-link-editor-tab"
+            hidden={sidebarView !== 'edit'}
+          >
             <NodeLinkEditor
               graph={graph}
               selectedTag={selectedTag}

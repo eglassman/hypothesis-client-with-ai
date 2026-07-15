@@ -247,7 +247,7 @@ describe('NodeLinkGraphPage', () => {
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
 
-  it('scrolls the sidebar to the evidence when a tag is selected', async () => {
+  it('keeps graph editing in place when a tag is selected', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
         id: 'ann-character',
@@ -263,8 +263,15 @@ describe('NodeLinkGraphPage', () => {
       return wrapper.find('g[role="button"]').length > 0;
     });
 
-    const sidebar = wrapper.find('aside').getDOMNode();
-    sidebar.scrollTo = sinon.stub();
+    wrapper.find('#node-link-editor-tab').props().onClick();
+    wrapper.update();
+
+    const relationshipInput = wrapper.find('input[placeholder="relationship"]');
+    relationshipInput.props().onInput({ target: { value: 'supports' } });
+    wrapper.update();
+
+    const detailsPanel = wrapper.find('#node-link-details-panel').getDOMNode();
+    detailsPanel.scrollTo = sinon.stub();
     const preventDefault = sinon.stub();
 
     wrapper.find('g[role="button"]').first().props().onKeyDown({
@@ -272,9 +279,39 @@ describe('NodeLinkGraphPage', () => {
       preventDefault,
     });
 
-    await waitFor(() => sidebar.scrollTo.called);
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper
+        .find('[data-testid="node-link-selection-summary"]')
+        .text()
+        .includes('Character');
+    });
 
     assert.calledOnce(preventDefault);
-    assert.calledWith(sidebar.scrollTo, { top: 0, behavior: 'smooth' });
+    assert.isTrue(wrapper.find('#node-link-editor-tab').prop('aria-selected'));
+    assert.isTrue(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.notCalled(detailsPanel.scrollTo);
+    assert.equal(
+      wrapper.find('input[placeholder="relationship"]').prop('value'),
+      'supports',
+    );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'View details')
+      .first()
+      .props()
+      .onClick();
+
+    await waitFor(() => detailsPanel.scrollTo.called);
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('#node-link-details-tab').prop('aria-selected'));
+    assert.isFalse(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.include(
+      wrapper.find('#node-link-details-panel').text(),
+      'Character',
+    );
+    assert.calledWith(detailsPanel.scrollTo, { top: 0 });
   });
 });
