@@ -85,13 +85,10 @@ describe('TagLegendPanel', () => {
     const wrapper = createComponent();
     await waitFor(() => {
       wrapper.update();
-      return wrapper.find('select option[value="Character"]').exists();
+      return wrapper.find('SearchableCombobox').exists();
     });
 
-    wrapper
-      .find('select')
-      .props()
-      .onChange({ target: { value: 'Character' } });
+    wrapper.find('SearchableCombobox').props().onChange('Character');
     wrapper.update();
 
     assert.include(wrapper.text(), 'Character');
@@ -105,13 +102,10 @@ describe('TagLegendPanel', () => {
     const wrapper = createComponent();
     await waitFor(() => {
       wrapper.update();
-      return wrapper.find('select option[value="Character"]').exists();
+      return wrapper.find('SearchableCombobox').exists();
     });
 
-    wrapper
-      .find('select')
-      .props()
-      .onChange({ target: { value: 'Character' } });
+    wrapper.find('SearchableCombobox').props().onChange('Character');
     wrapper.update();
 
     const characterBadge = wrapper.find('span[title="Character"]').first();

@@ -100,6 +100,61 @@ describe('NodeLinkEditor', () => {
     assert.calledOnce(onSaveState);
     assert.lengthOf(onSaveState.firstCall.args[0].tagEdges, 0);
   });
+
+  it('uses searchable tag comboboxes when adding and editing edges', () => {
+    const { wrapper } = createComponent();
+
+    assert.lengthOf(wrapper.find('TagCombobox'), 2);
+
+    buttonByText(wrapper, 'Edit').props().onClick();
+    wrapper.update();
+
+    assert.lengthOf(wrapper.find('[role="dialog"] TagCombobox'), 2);
+  });
+
+  it('suggests relationship types and filters the manual edge list', () => {
+    const semanticState = emptyNodeLinkState({
+      tagEdges: [
+        {
+          id: 'edge-character-action',
+          sourceTag: 'Character',
+          targetTag: 'Action',
+          connectionType: 'explains',
+        },
+        {
+          id: 'edge-action-character',
+          sourceTag: 'Action',
+          targetTag: 'Character',
+          connectionType: 'supports',
+        },
+      ],
+    });
+    const { wrapper } = createComponent({ semanticState });
+    const relationshipInput = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'new-edge-relationship');
+    const edgeFilter = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'manual-edge-filter');
+
+    assert.deepEqual(relationshipInput.prop('options'), [
+      'explains',
+      'supports',
+    ]);
+
+    edgeFilter.props().onChange('supports');
+    wrapper.update();
+
+    assert.include(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'supports',
+    );
+    assert.notInclude(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'explains',
+    );
+    assert.include(wrapper.text(), '1/2');
+  });
 });
 
 describe('routeGroupToApply', () => {
@@ -236,76 +291,79 @@ describe('NodeLinkGraphPage', () => {
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
 
-  it('filters the rendered graph to one document without refetching group annotations', async () => {
-    fakeStore.focusedGroupId.returns('private-group');
-    fakeStore.routeParams.returns({
-      group: 'private-group',
-      uri: 'https://example.com/launch-doc',
-    });
+  it('keeps graph editing in place when a tag is selected', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
-        id: 'ann-doc-a',
-        uri: 'https://example.com/doc-a',
-        exact: 'Evidence from document A',
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
         tags: ['Character'],
       }),
-      evidenceAnnotation({
-        id: 'ann-doc-b',
-        uri: 'https://example.com/doc-b',
-        exact: 'Evidence from document B',
-        tags: ['Action'],
-      }),
-      {
-        ...evidenceAnnotation({
-          id: 'hidden-ann-doc-a',
-          uri: 'https://example.com/doc-a',
-          exact: 'Hidden evidence from document A',
-          tags: ['Hidden Tag'],
-        }),
-        hidden: true,
-      },
     ]);
-    fakeNodeLinkState.loadState.callsFake(groupId =>
-      Promise.resolve({
-        status: 'missing',
-        state: emptyNodeLinkState({
-          selectedGroupId: groupId,
-          descriptiveTags: [{ id: 'desc-hidden', tag: 'Hidden Description' }],
-          tagEdges: [
-            {
-              sourceTag: 'Hidden Tag',
-              targetTag: 'Hidden Description',
-              connectionType: 'explains',
-            },
-          ],
-        }),
-        annotationId: null,
-        stateUri: `https://hypothesis-node-link.local/state/group/${groupId}`,
-      }),
-    );
-
     const wrapper = createComponent();
 
     await waitFor(() => {
       wrapper.update();
-      return wrapper.text().includes('3 tags, 2 documents');
+      return wrapper.find('g[role="button"]').length > 0;
     });
 
-    const documentSelect = wrapper.find('select').at(1);
-    assert.equal(documentSelect.prop('value'), '');
-    assert.include(documentSelect.text(), 'All');
+    const nodeFinder = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'node-link-node-finder');
+    assert.deepEqual(nodeFinder.prop('options'), ['Character']);
 
-    documentSelect.props().onChange({
-      target: { value: 'https://example.com/doc-a' },
+    wrapper.find('#node-link-editor-tab').props().onClick();
+    wrapper.update();
+
+    const relationshipInput = wrapper.find('input[placeholder="relationship"]');
+    relationshipInput.props().onInput({
+      currentTarget: { value: 'supports' },
+      target: { value: 'supports' },
+    });
+    wrapper.update();
+
+    const detailsPanel = wrapper.find('#node-link-details-panel').getDOMNode();
+    detailsPanel.scrollTo = sinon.stub();
+    const preventDefault = sinon.stub();
+
+    wrapper.find('g[role="button"]').first().props().onKeyDown({
+      key: 'Enter',
+      preventDefault,
     });
 
     await waitFor(() => {
       wrapper.update();
-      return wrapper.text().includes('1 tags, 1 documents');
+      return wrapper
+        .find('[data-testid="node-link-selection-summary"]')
+        .text()
+        .includes('Character');
     });
 
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Tag');
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Description');
-    assert.calledOnce(fakeNodeLinkState.fetchGroupAnnotations);
+    assert.calledOnce(preventDefault);
+    assert.isTrue(wrapper.find('#node-link-editor-tab').prop('aria-selected'));
+    assert.isTrue(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.notCalled(detailsPanel.scrollTo);
+    assert.equal(
+      wrapper.find('input[placeholder="relationship"]').prop('value'),
+      'supports',
+    );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'View details')
+      .first()
+      .props()
+      .onClick();
+
+    await waitFor(() => detailsPanel.scrollTo.called);
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('#node-link-details-tab').prop('aria-selected'));
+    assert.isFalse(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.include(
+      wrapper.find('#node-link-details-panel').text(),
+      'Character',
+    );
+    assert.calledWith(detailsPanel.scrollTo, { top: 0 });
   });
 });

@@ -108,6 +108,29 @@ describe('AISearchPanel', () => {
     assert.notCalled(fakeStore.closeSidebarPanel);
   });
 
+  it('suggests existing schema tags while allowing a new tag', () => {
+    fakeStore.tagInventoryRows.returns([
+      {
+        id: 'methods',
+        groupId: 'group-1',
+        schemaTag: 'Methods',
+        query: '',
+        annotationIds: [],
+      },
+    ]);
+    fakeStore.tagInventorySchemaTagColors.returns({ Findings: '#fff' });
+
+    const wrapper = createAISearchPanel();
+    const selector = wrapper.find('SearchableCombobox');
+
+    assert.deepEqual(selector.prop('options'), ['Findings', 'Methods']);
+    assert.isTrue(selector.prop('allowCustomValue'));
+
+    selector.props().onChange('New tag');
+
+    assert.calledWith(fakeStore.setAISearchPanelSchemaTagInput, 'New tag');
+  });
+
   it('closes AI search panel when Escape is pressed in search field', () => {
     const wrapper = createAISearchPanel();
 
@@ -348,10 +371,7 @@ describe('AISearchPanel', () => {
       prompt,
       'These tags have the following relationships to each other:',
     );
-    assert.notInclude(
-      prompt,
-      'Tag relationships for the selected group:',
-    );
+    assert.notInclude(prompt, 'Tag relationships for the selected group:');
     assert.notInclude(
       prompt,
       'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.',
