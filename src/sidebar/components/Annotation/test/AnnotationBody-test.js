@@ -89,15 +89,46 @@ describe('AnnotationBody', () => {
     assert.equal(tagItems.first().props().href, 'http://www.example.com/eenie');
   });
 
-  it('does not link the annotation tags if the user is third party', () => {
-    fakeIsThirdPartyUser.returns(true);
-    const wrapper = createBody();
+    it('does not link the annotation tags if the user is third party', () => {
+      fakeIsThirdPartyUser.returns(true);
+      const wrapper = createBody();
 
-    const tagItems = wrapper.find('TagListItem');
-    assert.isUndefined(tagItems.first().props().href);
-  });
+      const tagItems = wrapper.find('TagListItem');
+      assert.isUndefined(tagItems.first().props().href);
+    });
 
-  it('renders the tags and text from the draft', () => {
+    it('passes tag action callbacks when canEditTags is true', () => {
+      const onRemoveTag = sinon.stub();
+      const onMarkNegativeExample = sinon.stub();
+      const fakeAnnotation = fixtures.defaultAnnotation();
+      fakeAnnotation.tags = ['methods'];
+
+      const wrapper = createBody({
+        annotation: fakeAnnotation,
+        canEditTags: true,
+        onRemoveTag,
+        onMarkNegativeExample,
+      });
+
+      const tagItem = wrapper.find('TagListItem').first();
+      assert.equal(tagItem.props().onRemoveTag, onRemoveTag);
+      assert.equal(tagItem.props().onMarkNegativeExample, onMarkNegativeExample);
+      assert.isUndefined(tagItem.props().onRevertNegativeExample);
+    });
+
+    it('does not pass tag action callbacks when canEditTags is false', () => {
+      const wrapper = createBody({
+        canEditTags: false,
+        onRemoveTag: sinon.stub(),
+        onMarkNegativeExample: sinon.stub(),
+      });
+
+      const tagItem = wrapper.find('TagListItem').first();
+      assert.isUndefined(tagItem.props().onRemoveTag);
+      assert.isUndefined(tagItem.props().onMarkNegativeExample);
+    });
+
+    it('renders the tags and text from the draft', () => {
     setEditingMode(true);
 
     const wrapper = createBody();
@@ -174,6 +205,17 @@ describe('AnnotationBody', () => {
 
       assert.isFalse(wrapper.find('TagList').exists());
     });
+
+  it('does not throw if annotation text or tags are undefined', () => {
+    const annotation = fixtures.defaultAnnotation();
+    annotation.text = undefined;
+    annotation.tags = undefined;
+
+    const wrapper = createBody({ annotation });
+
+    assert.isFalse(wrapper.find('MarkdownView').exists());
+    assert.isFalse(wrapper.find('TagList').exists());
+  });
 
     it('applies theme', () => {
       const textStyle = { fontFamily: 'serif' };

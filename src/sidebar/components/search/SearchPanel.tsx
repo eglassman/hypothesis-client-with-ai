@@ -38,7 +38,9 @@ export default function SearchPanel() {
               disabled={hasSelection}
               query={filterQuery || null}
               onClearSearch={clearSearch}
-              onSearch={store.setFilterQuery}
+              onSearch={query => {
+                store.setFilterQuery(query);
+              }}
               onKeyDown={e => {
                 if (e.key === 'Escape') {
                   clearSearch();

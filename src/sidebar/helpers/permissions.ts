@@ -17,6 +17,8 @@ export type Permissions = {
   delete: string[];
 };
 
+type MaybePermissions = Partial<Permissions> | undefined | null;
+
 function defaultLevel(savedLevel: string | null): string {
   switch (savedLevel) {
     case 'private':
@@ -80,14 +82,17 @@ export function defaultPermissions(
  * Return true if an annotation with the given permissions is shared with any
  * group.
  */
-export function isShared(perms: Permissions): boolean {
-  return perms.read.some(principal => principal.startsWith('group:'));
+export function isShared(perms: MaybePermissions): boolean {
+  return (
+    Array.isArray(perms?.read) &&
+    perms.read.some(principal => principal.startsWith('group:'))
+  );
 }
 
 /**
  * Return true if an annotation with the given permissions is private.
  */
-export function isPrivate(perms: Permissions): boolean {
+export function isPrivate(perms: MaybePermissions): boolean {
   return !isShared(perms);
 }
 
@@ -95,9 +100,12 @@ export function isPrivate(perms: Permissions): boolean {
  * Return true if a user can perform the given `action` on an annotation.
  */
 export function permits(
-  perms: Permissions,
+  perms: MaybePermissions,
   action: 'update' | 'delete',
   userid: string | null,
 ): boolean {
-  return perms[action].indexOf(userid || '') !== -1;
+  return (
+    Array.isArray(perms?.[action]) &&
+    perms[action].indexOf(userid || '') !== -1
+  );
 }

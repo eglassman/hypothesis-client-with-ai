@@ -3,11 +3,13 @@ import { ListenerCollection } from '@hypothesis/frontend-shared';
 import { EventEmitter } from '../shared/event-emitter';
 import { PortFinder, PortRPC } from '../shared/messaging';
 import { generateHexString } from '../shared/random';
+import { applyTagHighlightPalette } from '../shared/tag-highlight-styles';
 import { matchShortcut } from '../shared/shortcut';
 import { getAllShortcuts, setAllShortcuts } from '../shared/shortcut-config';
 import type {
   AbstractRange,
   AnnotationData,
+  AnchorOptions,
   AnnotationTool,
   Annotator,
   Anchor,
@@ -33,7 +35,7 @@ import { DrawTool, DrawError } from './draw-tool';
 import { LayoutChangeEvent } from './events';
 import { FeatureFlags } from './features';
 import { HighlightClusterController } from './highlight-clusters';
-import { Highlighter } from './highlighter';
+import { Highlighter, setHighlightsHidden } from './highlighter';
 import { createIntegration } from './integrations';
 import { OutsideAssignmentNoticeController } from './outside-assignment-notice';
 import {
@@ -45,10 +47,31 @@ import {
 import { SelectionObserver } from './selection-observer';
 import { frameFillsAncestor } from './util/frame';
 import { isEditableContext } from './util/node';
+import {
+  isQuoteOnlySelectors,
+  mergeAnchoringSelectors,
+  mergeQuoteDisplayFromDescribe,
+  needsQuoteDisplayEnrichment,
+} from './util/merge-anchoring-selectors';
 import { normalizeURI } from './util/url';
 
 /** HTML element created by the highlighter with an associated annotation. */
 type AnnotationHighlight = HTMLElement & { _annotation?: AnnotationData };
+
+const NON_COLOR_TAGS = new Set(['ai-pending', 'ai-user-approved']);
+
+function tagsForHighlightColors(tags: string[] = []): string[] {
+  return tags.filter(tag => !NON_COLOR_TAGS.has(tag));
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 
 /** Return all the annotations tags associated with the selected text. */
 function annotationsForSelection(): string[] {
@@ -68,10 +91,11 @@ function annotationsAtPoint(
   x: number,
   y: number,
 ): string[] {
-  return highlighter
+  const tags = highlighter
     .getHighlightsFromPoint(x, y)
     .map(h => (h as AnnotationHighlight)._annotation?.$tag)
     .filter(tag => tag !== undefined) as string[];
+  return Array.from(new Set(tags));
 }
 
 function isRange(r: AbstractRange | ShapeAnchor): r is AbstractRange {
@@ -277,6 +301,14 @@ export class Guest
   private _pendingKeyboardMode?: 'move' | 'resize';
 
   /**
+   * Tag → highlight color for {@link applyTagHighlightPalette}. Updated when the
+   * sidebar sends `setTagHighlightPalette`; starts empty (cluster styling only).
+   */
+  private _tagHighlightPalette: Record<string, string>;
+  /** Server annotation IDs whose highlights should be hidden (row hidden in tag inventory). */
+  private _hiddenAnnotationIds: Set<string>;
+
+  /**
    * @param element -
    *   The root element in which the `Guest` instance should be able to anchor
    *   or create annotations. In an ordinary web page this typically `document.body`.
@@ -301,6 +333,8 @@ export class Guest
     this._informHostOnNextSelectionClear = true;
     this.selectedRanges = [];
     this._outsideAssignmentNotice = null;
+    this._tagHighlightPalette = {};
+    this._hiddenAnnotationIds = new Set();
     this._highlighter = new Highlighter(this.element);
 
     this._adder = new Adder(this.element, {
@@ -391,6 +425,21 @@ export class Guest
     this._hoveredAnnotations = new Set();
   }
 
+  /** Add/remove `h-row-hidden` on highlight elements based on `_hiddenAnnotationIds`. */
+  private _applyHiddenAnnotationClasses() {
+    for (const anchor of this.anchors) {
+      if (!anchor.highlights?.length) {
+        continue;
+      }
+      const shouldHide = this._hiddenAnnotationIds.has(anchor.annotation.$tag);
+      const isHidden = anchor.highlights[0].classList.contains('h-row-hidden');
+      if (shouldHide === isHidden) {
+        continue;
+      }
+      setHighlightsHidden(anchor.highlights, shouldHide);
+    }
+  }
+
   /** Return true if the sidebar is shown alongside the page content. */
   private _sideBySideActive(): boolean {
     if (this.sideBySide?.mode === 'manual' && this.sideBySide.isActive) {
@@ -470,6 +519,9 @@ export class Guest
     this._listeners.add(this.element, 'mouseover', ({ clientX, clientY }) => {
       const tags = annotationsAtPoint(this._highlighter, clientX, clientY);
       if (tags.length) {
+        // TODO: Add local-hover emphasis (eg. temporary darken/outline) for the
+        // currently hovered highlight in the document so adjacent same-color
+        // highlights are easier to distinguish.
         this._sidebarRPC.call('hoverAnnotations', tags);
       }
     });
@@ -700,6 +752,36 @@ export class Guest
       },
     );
 
+    this._sidebarRPC.on(
+      'setTagHighlightPalette',
+      (palette: Record<string, string>, hiddenAnnotationIds: string[] = []) => {
+        const paletteUnchanged =
+          Object.keys(palette).length ===
+            Object.keys(this._tagHighlightPalette).length &&
+          Object.entries(palette).every(
+            ([tag, color]) => this._tagHighlightPalette[tag] === color,
+          );
+        const nextHidden = new Set(hiddenAnnotationIds);
+        const hiddenUnchanged =
+          nextHidden.size === this._hiddenAnnotationIds.size &&
+          [...nextHidden].every(tag => this._hiddenAnnotationIds.has(tag));
+        if (paletteUnchanged && hiddenUnchanged) {
+          return;
+        }
+        if (!paletteUnchanged) {
+          this._tagHighlightPalette = { ...palette };
+          applyTagHighlightPalette(
+            this.element.ownerDocument,
+            this._tagHighlightPalette,
+          );
+        }
+        if (!hiddenUnchanged) {
+          this._hiddenAnnotationIds = nextHidden;
+          this._applyHiddenAnnotationClasses();
+        }
+      },
+    );
+
     this._sidebarRPC.on('showContentInfo', (info: ContentInfoConfig) =>
       this._integration.showContentInfo?.(info),
     );
@@ -736,6 +818,20 @@ export class Guest
 
       renderThumbnail()
         .then(bitmap => callback({ ok: true, value: bitmap }))
+        .catch(error => callback({ ok: false, error: error.message }));
+    });
+
+    this._sidebarRPC.on('getPdfBytes', callback => {
+      const readPdfBytes = async () => {
+        if (!this._integration.getPdfBytes) {
+          throw new Error('PDF bytes not supported for document type');
+        }
+        const bytes = await this._integration.getPdfBytes();
+        return uint8ArrayToBase64(bytes);
+      };
+
+      readPdfBytes()
+        .then(data => callback({ ok: true, value: data }))
         .catch(error => callback({ ok: false, error: error.message }));
     });
 
@@ -888,15 +984,103 @@ export class Guest
   private _globalKeyboardListenerCleanup?: () => void;
 
   /**
+   * Enrich anchored targets with location selectors (Phase 1) and quote
+   * display metadata (Phase 2) before syncing to the sidebar.
+   */
+  private async _enrichAnchoredTargets(anchors: Anchor[]): Promise<void> {
+    for (const anchor of anchors) {
+      const { target } = anchor;
+
+      // Phase 1 — location selectors for quote-only targets.
+      if (isQuoteOnlySelectors(target.selector)) {
+        let locationEnriched = false;
+        if (anchor.region && isRange(anchor.region)) {
+          try {
+            const range = resolveAnchor(anchor);
+            if (range) {
+              const trimmed = this._integration.getAnnotatableRange(range);
+              if (trimmed) {
+                const described = await Promise.resolve(
+                  this._integration.describe(this.element, trimmed),
+                );
+                target.selector = mergeAnchoringSelectors(
+                  target.selector,
+                  described,
+                );
+                locationEnriched = !isQuoteOnlySelectors(target.selector);
+              }
+            }
+          } catch {
+            // Fall through to describeQuoteOnly.
+          }
+        }
+
+        if (
+          !locationEnriched &&
+          isQuoteOnlySelectors(target.selector) &&
+          this._integration.describeQuoteOnly
+        ) {
+          try {
+            const described = await Promise.resolve(
+              this._integration.describeQuoteOnly(target.selector),
+            );
+            target.selector = mergeAnchoringSelectors(
+              target.selector,
+              described,
+            );
+          } catch {
+            // Leave selectors unchanged (quote-only).
+          }
+        }
+      }
+
+      // Phase 2 — quote display metadata when a text layer is available.
+      if (!needsQuoteDisplayEnrichment(target.selector)) {
+        continue;
+      }
+      if (!anchor.region || !isRange(anchor.region)) {
+        continue;
+      }
+      try {
+        const range = resolveAnchor(anchor);
+        if (!range) {
+          continue;
+        }
+        const trimmed = this._integration.getAnnotatableRange(range);
+        if (!trimmed) {
+          continue;
+        }
+        const described = await Promise.resolve(
+          this._integration.describe(this.element, trimmed),
+        );
+        target.selector = mergeQuoteDisplayFromDescribe(
+          target.selector,
+          described,
+        );
+      } catch {
+        // Quote display enrichment is best-effort.
+      }
+    }
+  }
+
+  /**
    * Anchor an annotation's selectors in the document.
    *
    * _Anchoring_ resolves a set of selectors to a concrete region of the document
    * which is then highlighted.
    *
    * Any existing anchors associated with `annotation` will be removed before
-   * re-anchoring the annotation.
+   * re-anchoring by default. When `options.preserveExistingHighlights` is true,
+   * old highlights are kept until replacement highlights are ready and then
+   * swapped in a single update.
    */
-  async anchor(annotation: AnnotationData): Promise<Anchor[]> {
+  async anchor(
+    annotation: AnnotationData,
+    options: AnchorOptions = {},
+  ): Promise<Anchor[]> {
+    const preserveExistingHighlights =
+      options.preserveExistingHighlights ?? false;
+
     if (this._contentReady) {
       await this._contentReady;
       this._contentReady = undefined;
@@ -950,11 +1134,13 @@ export class Guest
         return;
       }
 
+      const colorTags = tagsForHighlightColors(anchor.annotation?.tags);
       let highlights;
       if (region instanceof Range) {
         highlights = this._highlighter.highlightRange(
           region,
           anchor.annotation?.$cluster /* cssClass */,
+          colorTags,
         ) as AnnotationHighlight[];
       } else {
         highlights = this._highlighter.highlightShape(
@@ -969,10 +1155,20 @@ export class Guest
       if (this._hoveredAnnotations.has(anchor.annotation.$tag)) {
         this._highlighter.setHighlightsFocused(highlights, true);
       }
+      if (this._hiddenAnnotationIds.has(anchor.annotation.$tag)) {
+        setHighlightsHidden(highlights, true);
+      }
     };
 
-    // Remove existing anchors for this annotation.
-    this.detach(annotation.$tag, false /* notify */);
+    const existingAnchors = this.anchors.filter(
+      anchor => anchor.annotation.$tag === annotation.$tag,
+    );
+
+    // Remove existing anchors for this annotation unless we are preserving the
+    // old highlights until replacement highlights are ready.
+    if (!preserveExistingHighlights) {
+      this.detach(annotation.$tag, false /* notify */);
+    }
 
     this._annotations.add(annotation.$tag);
 
@@ -987,9 +1183,7 @@ export class Guest
       return [];
     }
 
-    for (const anchor of anchors) {
-      highlight(anchor);
-    }
+    await this._enrichAnchoredTargets(anchors);
 
     // Set flag indicating whether anchoring succeeded. For each target,
     // anchoring is successful either if there are no selectors (ie. this is a
@@ -998,10 +1192,37 @@ export class Guest
       anchors.length > 0 &&
       anchors.every(anchor => anchor.target.selector && !anchor.region);
 
-    this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
-
-    // Let other frames (eg. the sidebar) know about the new annotation.
+    // Merge enriched selectors into the sidebar store before highlights paint so
+    // location-based ordering matches the resolved geometry without waiting for
+    // the highlight loop (and so sort updates before the PDF repaints).
     this._sidebarRPC.call('syncAnchoringStatus', annotation);
+
+    const hasResolvedReplacement = anchors.some(anchor =>
+      Boolean(resolveAnchor(anchor)),
+    );
+
+    if (preserveExistingHighlights && !hasResolvedReplacement) {
+      // Keep existing highlights if replacement anchoring failed.
+      return existingAnchors;
+    }
+
+    for (const anchor of anchors) {
+      highlight(anchor);
+    }
+
+    if (preserveExistingHighlights) {
+      for (const anchor of existingAnchors) {
+        if (anchor.highlights) {
+          this._highlighter.removeHighlights(anchor.highlights);
+        }
+      }
+      const remainingAnchors = this.anchors.filter(
+        anchor => anchor.annotation.$tag !== annotation.$tag,
+      );
+      this._updateAnchors(remainingAnchors.concat(anchors), true /* notify */);
+    } else {
+      this._updateAnchors(this.anchors.concat(anchors), true /* notify */);
+    }
 
     return anchors;
   }
@@ -1069,6 +1290,7 @@ export class Guest
           uri: info.uri,
           document: info.metadata,
           target,
+          tags: [],
           $tag: 'a:' + generateHexString(8),
         };
 
@@ -1145,6 +1367,7 @@ export class Guest
       uri: info.uri,
       document: info.metadata,
       target,
+      tags: [],
       $highlight: highlight,
       $cluster: highlight ? 'user-highlights' : 'user-annotations',
       $tag: 'a:' + generateHexString(8),
@@ -1165,17 +1388,29 @@ export class Guest
    * associated document region(s) is hovered).
    */
   _hoverAnnotations(tags: string[]) {
-    this._hoveredAnnotations.clear();
-    tags.forEach(tag => this._hoveredAnnotations.add(tag));
+    const prevHovered = this._hoveredAnnotations;
+    const nextHovered = new Set(tags);
 
     for (const anchor of this.anchors) {
-      if (anchor.highlights) {
-        const toggle = tags.includes(anchor.annotation.$tag);
-        this._highlighter.setHighlightsFocused(anchor.highlights, toggle);
+      if (!anchor.highlights) {
+        continue;
       }
+      const tag = anchor.annotation.$tag;
+      const shouldFocus = nextHovered.has(tag);
+      const wasFocused = prevHovered.has(tag);
+      if (shouldFocus === wasFocused) {
+        continue;
+      }
+      this._highlighter.setHighlightsFocused(anchor.highlights, shouldFocus);
     }
 
-    this._sidebarRPC.call('hoverAnnotations', tags);
+    this._hoveredAnnotations = nextHovered;
+
+    const prevKey = [...prevHovered].sort().join(',');
+    const nextKey = [...nextHovered].sort().join(',');
+    if (prevKey !== nextKey) {
+      this._sidebarRPC.call('hoverAnnotations', tags);
+    }
   }
 
   /**

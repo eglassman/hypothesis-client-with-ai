@@ -21,6 +21,7 @@ describe('ImportAnnotationsService', () => {
       beginImport: sinon.stub(),
       completeImport: sinon.stub(),
       focusedGroupId: sinon.stub().returns('group-a'),
+      mainFrame: sinon.stub().returns(null),
       defaultContentFrame: sinon.stub().returns(null),
       profile: sinon.stub().returns({
         userid: 'acct:foo@example.org',

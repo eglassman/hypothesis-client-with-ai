@@ -4,6 +4,8 @@ import {
   CancelIcon,
   CaretRightIcon,
   CaretLeftIcon,
+  CollapseIcon,
+  ExpandIcon,
   HideIcon,
   SelectionIcon,
   NoteIcon,
@@ -170,6 +172,12 @@ export type ToolbarProps = {
   /** Callback for the show/hide highlights button */
   toggleHighlights: () => void;
 
+  /** Is the sidebar currently expanded to full page width? */
+  isFullWidth?: boolean;
+
+  /** Callback to toggle full-width sidebar mode */
+  toggleFullWidth?: () => void;
+
   /**
    * Callback for toggling the visibility of the sidebar when the show/hide
    * sidebar button is clicked
@@ -222,11 +230,13 @@ export default function Toolbar({
   closeSidebar,
   createAnnotation,
   isSidebarOpen,
+  isFullWidth = false,
   sidebarContainerId,
   newAnnotationType,
   showHighlights,
   supportedTools = ['selection'],
   toggleHighlights,
+  toggleFullWidth,
   toggleSidebar,
   toggleSidebarRef,
   useMinimalControls = false,
@@ -310,6 +320,15 @@ export default function Toolbar({
               pressedBackground={false}
               onClick={toggleHighlights}
             />
+            {toggleFullWidth && (
+              <ToolbarButton
+                title={isFullWidth ? 'Exit full width' : 'Full width'}
+                icon={isFullWidth ? CollapseIcon : ExpandIcon}
+                pressed={isFullWidth}
+                pressedBackground={false}
+                onClick={toggleFullWidth}
+              />
+            )}
             {supportedTools.includes('selection') && (
               <ToolbarButton
                 data-testid="text-annotation"

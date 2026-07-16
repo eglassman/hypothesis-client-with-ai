@@ -11,7 +11,6 @@ describe('HypothesisApp', () => {
   let fakeConfirm;
   let fakeServiceConfig = null;
   let fakeSession = null;
-  let fakeShouldAutoDisplayTutorial = null;
   let fakeSettings = null;
   let fakeToastMessenger = null;
   let fakeIsThirdPartyService;
@@ -32,7 +31,6 @@ describe('HypothesisApp', () => {
   beforeEach(() => {
     fakeApplyTheme = sinon.stub().returns({});
     fakeServiceConfig = sinon.stub();
-    fakeShouldAutoDisplayTutorial = sinon.stub().returns(false);
 
     fakeStore = {
       clearGroups: sinon.stub(),
@@ -52,6 +50,7 @@ describe('HypothesisApp', () => {
         },
       }),
       route: sinon.stub().returns('sidebar'),
+      searchUris: sinon.stub().returns(['https://example.com/test.pdf']),
 
       getLink: sinon.stub(),
     };
@@ -86,9 +85,6 @@ describe('HypothesisApp', () => {
       '@hypothesis/frontend-shared': { confirm: fakeConfirm },
       '../config/service-config': { serviceConfig: fakeServiceConfig },
       '../store': { useSidebarStore: () => fakeStore },
-      '../helpers/session': {
-        shouldAutoDisplayTutorial: fakeShouldAutoDisplayTutorial,
-      },
       '../helpers/theme': { applyTheme: fakeApplyTheme },
       '../helpers/is-third-party-service': {
         isThirdPartyService: fakeIsThirdPartyService,
@@ -143,18 +139,47 @@ describe('HypothesisApp', () => {
     });
   });
 
-  describe('auto-opening tutorial', () => {
-    it('should open tutorial on profile load when criteria are met', () => {
-      fakeShouldAutoDisplayTutorial.returns(true);
+  describe('startup panel opening', () => {
+    it('opens AI search panel for the first detected PDF in sidebar route', () => {
       createComponent();
-      assert.calledOnce(fakeStore.openSidebarPanel);
+
+      assert.calledOnceWithExactly(
+        fakeStore.openSidebarPanel,
+        'aiSearchAnnotations',
+      );
     });
 
-    it('should not open tutorial on profile load when criteria are not met', () => {
-      fakeShouldAutoDisplayTutorial.returns(false);
+    it('does not re-open AI search panel for the same detected PDF', () => {
+      const wrapper = createComponent();
+      wrapper.setProps({ settings: { theme: 'clean' } });
+
+      assert.calledOnceWithExactly(
+        fakeStore.openSidebarPanel,
+        'aiSearchAnnotations',
+      );
+    });
+
+    it('re-opens AI search panel when a newly detected PDF is loaded', () => {
+      const wrapper = createComponent();
+      fakeStore.searchUris.returns(['https://example.com/next.pdf']);
+
+      wrapper.setProps({ settings: { theme: 'clean' } });
+
+      assert.calledTwice(fakeStore.openSidebarPanel);
+      assert.alwaysCalledWithExactly(
+        fakeStore.openSidebarPanel,
+        'aiSearchAnnotations',
+      );
+    });
+
+    it('does not open AI search panel on non-sidebar routes', () => {
+      fakeStore.route.returns('annotation');
+
       createComponent();
+
       assert.notCalled(fakeStore.openSidebarPanel);
     });
+
   });
 
   // Add tests for common behaviors shared between "Log in" and "Sign up" actions.

@@ -1,0 +1,19 @@
+diff --git a/lib/tests.js b/lib/tests.js
+index e2689358687eca22fc205b838f3570ff5b7889c0..7050d9fc5d8e2b96547e1e3c5368db825ec715c1 100644
+--- a/lib/tests.js
++++ b/lib/tests.js
+@@ -67,12 +67,9 @@ export async function runTests({
+ 
+   // Run the tests with vitest
+   log('Starting vitest...');
+-  const [{ startVitest }, vitestOptions] = await Promise.all([
+-    import('vitest/node'),
+-    import(path.resolve(vitestConfig)),
+-  ]);
++  const { startVitest } = await import('vitest/node');
+   await startVitest('test', [], {
+     watch: live,
+-    ...vitestOptions,
++    config: path.resolve(vitestConfig),
+   });
+ }

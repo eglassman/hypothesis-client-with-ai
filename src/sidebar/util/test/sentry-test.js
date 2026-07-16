@@ -1,3 +1,4 @@
+import { clientVersion } from '../../../test-util/client-version';
 import * as sentry from '../sentry';
 
 describe('sidebar/util/sentry', () => {
@@ -58,7 +59,7 @@ describe('sidebar/util/sentry', () => {
         sinon.match({
           dsn: 'test-dsn',
           environment: 'dev',
-          release: '1.0.0-dummy-version',
+          release: clientVersion,
         }),
       );
     });

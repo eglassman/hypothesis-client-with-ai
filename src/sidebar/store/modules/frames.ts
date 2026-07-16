@@ -227,6 +227,13 @@ function getContentInfo(state: State) {
   return state.contentInfo;
 }
 
+const isAnnotationFetchComplete = createSelector(
+  (state: State) => state.frames,
+  frames =>
+    frames.length === 0 ||
+    frames.every(frame => frame.isAnnotationFetchComplete),
+);
+
 export const framesModule = createStoreModule(initialState, {
   namespace: 'frames',
   reducers,
@@ -241,6 +248,7 @@ export const framesModule = createStoreModule(initialState, {
   selectors: {
     getContentInfo,
     frames,
+    isAnnotationFetchComplete,
     mainFrame,
     defaultContentFrame,
     searchUris,

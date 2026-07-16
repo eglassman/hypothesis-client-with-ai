@@ -193,6 +193,8 @@ export type HostToSidebarCalls = {
   sidebarOpened(): void;
   /** Notify the sidebar iframe that it has become hidden. */
   sidebarClosed(): void;
+  /** Notify the sidebar iframe that full-width mode was toggled. */
+  setSidebarFullWidth(fullWidth: boolean): void;
 };
 
 /** Calls that the sidebar makes to guests. */
@@ -214,6 +216,12 @@ export type SidebarToGuestCalls = {
 
   /** Load new annotations into the guest frame. */
   loadAnnotations(anns: AnnotationData[]): void;
+
+  /**
+   * Replace tag highlight colors in this guest (full map). Keys are tag names
+   * (e.g. `ai-pending`); values are CSS colors (e.g. `rgba(...)`).
+   */
+  setTagHighlightPalette(palette: Record<string, string>, hiddenAnnotationIds: string[]): void;
 
   /** Navigate to the segment of a book associated with an annotation. */
   navigateToSegment(ann: AnnotationData): void;
@@ -248,6 +256,12 @@ export type SidebarToGuestCalls = {
    * Expose the guest document info to the sidebar
    */
   getDocumentInfo(callback: (info: DocumentInfo) => void): void;
+
+  /**
+   * Return the loaded PDF as a base64 string for Claude document search.
+   * Only available for PDF documents.
+   */
+  getPdfBytes(callback: (result: Result<string>) => void): void;
 };
 
 /** Calls that the sidebar makes to the host. */
@@ -336,4 +350,7 @@ export type SidebarToHostCalls = CommonCalls & {
 
   /** Dismiss a toast message in the host frame. */
   toastMessageDismissed(id: string): void;
+
+  /** Request the host to expand the sidebar to full viewport width. */
+  setSidebarFullWidth(fullWidth: boolean): void;
 };

@@ -7,10 +7,15 @@ import { applyTheme } from '../helpers/theme';
 import { withServices } from '../service-context';
 import type { FrameSyncService } from '../services/frame-sync';
 import { useSidebarStore } from '../store';
+import ExperimentLogTopBarControls from './ExperimentLogTopBarControls';
 import GroupList from './GroupList';
 import SortMenu from './SortMenu';
 import TopBarToggleButton from './TopBarToggleButton';
 import UserMenu from './UserMenu';
+import NodeLinkGraphIconButton from './node-link/NodeLinkGraphIconButton';
+import TagLegendIconButton from './node-link/TagLegendIconButton';
+import AISearchIconButton from './search/AISearchIconButton';
+import EmptyPanelIconButton from './search/EmptyPanelIconButton';
 import SearchIconButton from './search/SearchIconButton';
 import StreamSearchInput from './search/StreamSearchInput';
 
@@ -110,7 +115,11 @@ function TopBar({
         <div className="grow flex items-center justify-end">
           {isSidebar && (
             <>
+              <AISearchIconButton />
+              <EmptyPanelIconButton />
               <SearchIconButton />
+              <NodeLinkGraphIconButton />
+              <TagLegendIconButton />
               <SortMenu />
               {controlEnabled(settings, 'share') && (
                 <TopBarToggleButton
@@ -134,6 +143,7 @@ function TopBar({
               data-testid="help-icon-button"
             />
           )}
+          {isSidebar && <ExperimentLogTopBarControls />}
           {isLoggedIn ? (
             controlEnabled(settings, 'account') && (
               <UserMenu onLogout={onLogout} />

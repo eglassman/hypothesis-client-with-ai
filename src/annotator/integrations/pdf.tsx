@@ -28,6 +28,7 @@ import {
   anchor,
   canDescribe,
   describe,
+  describeQuoteOnly,
   describeShape,
   documentHasText,
   isTextLayerRenderingDone,
@@ -365,6 +366,10 @@ export class PDFIntegration
     }
   }
 
+  describeQuoteOnly(selectors: Selector[]): Promise<Selector[]> {
+    return describeQuoteOnly(selectors);
+  }
+
   /**
    * Check whether the PDF has selectable text and show a warning if not.
    */
@@ -443,7 +448,9 @@ export class PDFIntegration
       }
     }
 
-    refreshAnnotations.map(annotation => this._annotator.anchor(annotation));
+    refreshAnnotations.map(annotation =>
+      this._annotator.anchor(annotation, { preserveExistingHighlights: true }),
+    );
   }
 
   /**
@@ -731,5 +738,16 @@ export class PDFIntegration
     }
 
     return canvas.transferToImageBitmap();
+  }
+
+  /** Return PDF bytes already loaded by PDF.js in this tab. */
+  async getPdfBytes(): Promise<Uint8Array> {
+    const pdfWindow = window as unknown as PDFWindow;
+    const app = pdfWindow.PDFViewerApplication;
+    if (app.initializedPromise) {
+      await app.initializedPromise;
+    }
+    await app.pdfDocument.getDownloadInfo();
+    return app.pdfDocument.getData();
   }
 }

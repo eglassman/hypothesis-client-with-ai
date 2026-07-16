@@ -26,6 +26,11 @@ export type ClientAnnotationData = {
   $anchorTimeout?: boolean;
 
   /**
+   * Flag indicating that waiting for location selector enrichment timed out
+   */
+  $locationTimeout?: boolean;
+
+  /**
    * Flag indicating that this annotation was created using the "Highlight" button,
    * as opposed to "Annotate".
    */

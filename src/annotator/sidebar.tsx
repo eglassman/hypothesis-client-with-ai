@@ -182,6 +182,7 @@ export class Sidebar implements Destroyable {
       },
       setSidebarOpen: open => (open ? this.open() : this.close()),
       setHighlightsVisible: show => this.setHighlightsVisible(show),
+      setFullWidth: fullWidth => this._applyFullWidth(fullWidth),
     });
 
     // Set up callback for mode button click - cycles through modes
@@ -336,6 +337,12 @@ export class Sidebar implements Destroyable {
     }
 
     this._listeners.add(window, 'resize', () => this._onResize());
+    this._listeners.add(document, 'visibilitychange', () => {
+      if (document.hidden && this.toolbar.fullWidth) {
+        this._applyFullWidth(false);
+        this.toolbar.fullWidth = false;
+      }
+    });
 
     this._dragResizeState = {
       initial: null,
@@ -735,6 +742,34 @@ export class Sidebar implements Destroyable {
         break;
       }
     }
+  }
+
+  _applyFullWidth(fullWidth: boolean) {
+    if (!this.iframeContainer) {
+      return;
+    }
+    const sidebarEdge = this.iframeContainer.querySelector(
+      '[data-testid="sidebar-edge"]',
+    ) as HTMLElement | null;
+    if (fullWidth) {
+      this.iframeContainer.style.width = '100vw';
+      this.iframeContainer.style.marginLeft = '-100vw';
+      if (sidebarEdge) {
+        sidebarEdge.style.left = '0';
+        sidebarEdge.style.zIndex = '4';
+      }
+    } else {
+      this.iframeContainer.style.width = '';
+      this.iframeContainer.style.marginLeft = '';
+      if (sidebarEdge) {
+        sidebarEdge.style.left = '';
+        sidebarEdge.style.zIndex = '';
+      }
+      const cssWidth = this.iframeContainer.getBoundingClientRect().width;
+      this.iframeContainer.style.marginLeft = `${-1 * cssWidth}px`;
+    }
+    this._sidebarRPC.call('setSidebarFullWidth', fullWidth);
+    this._updateLayoutState();
   }
 
   open() {

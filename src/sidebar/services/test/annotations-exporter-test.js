@@ -4,6 +4,7 @@ import {
   newReply,
   publicAnnotation,
 } from '../../test/annotation-fixtures';
+import { clientVersion } from '../../../test-util/client-version';
 import { formatSortableDateTime } from '../../util/time';
 import { AnnotationsExporter } from '../annotations-exporter';
 
@@ -74,7 +75,7 @@ describe('AnnotationsExporter', () => {
       assert.deepEqual(result, {
         export_date: now.toISOString(),
         export_userid: 'userId',
-        client_version: '__VERSION__',
+        client_version: clientVersion,
         annotations: [firstBaseAnnotation, secondBaseAnnotation],
       });
     });

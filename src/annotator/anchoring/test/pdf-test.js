@@ -40,6 +40,7 @@ const fixtures = {
       'Netherfield Park is occupied again?" ',
 
     'NODE A\nNODE B\nNODE C',
+    'ITEM A-\nITEM B',
   ],
 };
 
@@ -270,6 +271,235 @@ describe('annotator/anchoring/pdf', () => {
         pdfAnchoring.describe(range),
         'Selection does not contain text',
       );
+    });
+
+    it('inserts a space in the quote when adjacent text-layer spans have a word-space gap', async () => {
+      // Page 3 (index 3) has 'NODE A\nNODE B\nNODE C', one <div> per line.
+      // Stub getBoundingClientRect so NODE A and NODE B appear on the same line
+      // with a horizontal gap larger than the word-space threshold (15% of em/height).
+      viewer.pdfViewer.setCurrentPage(3);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      const wordSpaceGap = lineHeight * 0.3; // 6px > threshold of 3px
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 60 + wordSpaceGap,
+        right: 120 + wordSpaceGap,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+
+      // In the DOM, the two divs' textContent is concatenated without a space.
+      const range = findText(container, 'NODE ANODE B');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      // exact stays as raw textContent (for re-anchoring); displayExact has the space.
+      assert.equal(quote.exact, 'NODE ANODE B');
+      assert.equal(quote.displayExact, 'NODE A NODE B');
+    });
+
+    it('does not insert a space when the gap between spans is below the word-space threshold', async () => {
+      viewer.pdfViewer.setCurrentPage(3);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      const tinyGap = lineHeight * 0.05; // 1px < threshold of 3px
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 60 + tinyGap,
+        right: 120 + tinyGap,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+
+      const range = findText(container, 'NODE ANODE B');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'NODE ANODE B');
+      assert.isUndefined(quote.displayExact);
+    });
+
+    it('inserts a space between spans on different lines', async () => {
+      // Cross-line transitions get a space for sidebar readability.
+      // exact stays raw (no space) so re-anchoring is unaffected.
+      viewer.pdfViewer.setCurrentPage(3);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      // NODE B is on the next line (top differs by more than half lineHeight)
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      const range = findText(container, 'NODE ANODE B');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'NODE ANODE B');
+      assert.equal(quote.displayExact, 'NODE A NODE B');
+    });
+
+    it('keeps a lexical hyphen when rejoining a compound split across lines', async () => {
+      viewer.pdfViewer.setCurrentPage(4);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      textLayerDivs[0].textContent = 'Theory-';
+      textLayerDivs[1].textContent = 'based methods';
+
+      const range = new Range();
+      range.setStart(textLayerDivs[0].firstChild, 0);
+      range.setEnd(
+        textLayerDivs[1].firstChild,
+        textLayerDivs[1].textContent.length,
+      );
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'Theory-based methods');
+      assert.isUndefined(quote.displayExact);
+    });
+
+    it('removes a syllable hyphen when rejoining a word split across lines', async () => {
+      viewer.pdfViewer.setCurrentPage(4);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      textLayerDivs[0].textContent = 'analy-';
+      textLayerDivs[1].textContent = 'sis of';
+
+      const range = new Range();
+      range.setStart(textLayerDivs[0].firstChild, 0);
+      range.setEnd(
+        textLayerDivs[1].firstChild,
+        textLayerDivs[1].textContent.length,
+      );
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'analy-sis of');
+      assert.isUndefined(quote.displayExact);
+      assert.deepEqual(quote.pdfLineBreakHyphens, [
+        { before: 'analy', after: 'sis' },
+      ]);
+    });
+
+    it('does not insert a space between cross-line spans when previous span ends with a hyphen', async () => {
+      // Page 4 has 'ITEM A-\nITEM B': first div ends with '-', second is on
+      // the next line. No space should be inserted after the hyphen.
+      viewer.pdfViewer.setCurrentPage(4);
+
+      const textLayerDivs = Array.from(
+        container.querySelectorAll('.textLayer div'),
+      ).filter(el => el.textContent.length > 0);
+
+      const lineHeight = 20;
+      sinon.stub(textLayerDivs[0], 'getBoundingClientRect').returns({
+        top: 100,
+        left: 0,
+        right: 60,
+        bottom: 120,
+        height: lineHeight,
+        width: 60,
+      });
+      sinon.stub(textLayerDivs[1], 'getBoundingClientRect').returns({
+        top: 125,
+        left: 0,
+        right: 60,
+        bottom: 145,
+        height: lineHeight,
+        width: 60,
+      });
+
+      const range = findText(container, 'ITEM A-ITEM B');
+      const selectors = await pdfAnchoring.describe(range);
+      const quote = selectors.find(s => s.type === 'TextQuoteSelector');
+
+      assert.equal(quote.exact, 'ITEM A-ITEM B');
+      assert.isUndefined(quote.displayExact);
     });
   });
 

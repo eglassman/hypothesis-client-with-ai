@@ -3,6 +3,7 @@ import { LoadAnnotationsService, $imports } from '../load-annotations';
 
 let searchClients;
 let longRunningSearchClient = false;
+let fakeTagInventoryGroupSync;
 class FakeSearchClient extends EventEmitter {
   constructor(
     searchFn,
@@ -66,9 +67,11 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeStore = {
+      addTagInventoryRow: sinon.stub(),
       addAnnotations: sinon.stub(),
       annotationFetchFinished: sinon.stub(),
       annotationFetchStarted: sinon.stub(),
+      tagInventoryRows: sinon.stub().returns([]),
       clearAnnotations: sinon.stub(),
       frames: sinon.stub(),
       removeAnnotations: sinon.stub(),
@@ -93,6 +96,10 @@ describe('LoadAnnotationsService', () => {
     };
 
     fakeUris = ['http://example.com'];
+    fakeTagInventoryGroupSync = {
+      applyStoreAnnotationsToInventory: sinon.stub().returns(Promise.resolve()),
+      getGroupAnnotations: sinon.stub().returns(Promise.resolve([])),
+    };
     $imports.$mock({
       '../search-client': {
         SearchClient: FakeSearchClient,
@@ -113,6 +120,7 @@ describe('LoadAnnotationsService', () => {
     );
     return new LoadAnnotationsService(
       fakeApi,
+      fakeTagInventoryGroupSync,
       fakeStore,
       fakeStreamer,
       fakeStreamFilter,
@@ -328,6 +336,39 @@ describe('LoadAnnotationsService', () => {
       svc.load({ groupId: fakeGroupId, uris: fakeUris });
 
       assert.calledOnce(fakeStore.annotationFetchFinished);
+    });
+
+    it('loads group annotations for private groups after document loads', async () => {
+      const svc = createService();
+
+      svc.load({ groupId: fakeGroupId, uris: fakeUris });
+
+      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
+      assert.calledOnce(fakeTagInventoryGroupSync.getGroupAnnotations);
+      assert.calledWith(
+        fakeTagInventoryGroupSync.getGroupAnnotations,
+        fakeGroupId,
+      );
+    });
+
+    it('syncs document inventory for public groups after document loads', async () => {
+      const svc = createService();
+
+      svc.load({ groupId: '__world__', uris: fakeUris });
+
+      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
+      assert.calledWith(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory, {
+        documentUris: fakeUris,
+      });
+      assert.notCalled(fakeTagInventoryGroupSync.getGroupAnnotations);
+    });
+
+    it('does not sync group history for group-wide loads without uris', () => {
+      const svc = createService();
+
+      svc.load({ groupId: fakeGroupId });
+
+      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
 
     it('logs an error by default to the console if the search client emits an error', () => {

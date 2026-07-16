@@ -8,6 +8,10 @@ import type { Thread as IThread } from '../helpers/build-thread';
 import { withServices } from '../service-context';
 import type { FrameSyncService } from '../services/frame-sync';
 import { useSidebarStore } from '../store';
+import {
+  getThreadListScrollContainer,
+  threadViewportOffset,
+} from '../helpers/thread-list-scroll-metrics';
 import Thread from './Thread';
 
 export type ThreadCardProps = {
@@ -38,6 +42,20 @@ function ThreadCard({ frameSync, thread }: ThreadCardProps) {
     },
     [frameSync],
   );
+
+  const pinThreadScrollPosition = useCallback(() => {
+    try {
+      const viewportOffset = threadViewportOffset(
+        thread.id,
+        getThreadListScrollContainer(),
+      );
+      if (viewportOffset !== null) {
+        store.setThreadScrollAnchor(thread.id, viewportOffset);
+      }
+    } catch {
+      store.setThreadScrollAnchor(thread.id, 0);
+    }
+  }, [store, thread.id]);
 
   const currentUserId = store.profile().userid;
   const annotationIsDeclined =
@@ -126,11 +144,16 @@ function ThreadCard({ frameSync, thread }: ThreadCardProps) {
         // Prevent click events intended for another action from
         // triggering a page scroll.
         if (!isFromButtonOrLink(e.target as Element) && thread.annotation) {
+          pinThreadScrollPosition();
           scrollToAnnotation(thread.annotation);
         }
       }}
-      onMouseEnter={() => setThreadHovered(thread.annotation ?? null)}
-      onMouseLeave={() => setThreadHovered(null)}
+      onMouseEnter={() => {
+        setThreadHovered(thread.annotation ?? null);
+      }}
+      onMouseLeave={() => {
+        setThreadHovered(null);
+      }}
       onKeyDown={e => {
         // Simulate default button behavior, where `Enter` and `Space` trigger
         // click action
@@ -142,6 +165,7 @@ function ThreadCard({ frameSync, thread }: ThreadCardProps) {
           ['Enter', ' '].includes(e.key) &&
           thread.annotation
         ) {
+          pinThreadScrollPosition();
           scrollToAnnotation(thread.annotation);
         }
       }}

@@ -161,6 +161,10 @@ host page. See shadow-root.ts for more details.
       @apply sidebar-transition-visibility;
     }
 
+    &.sidebar-full-width {
+      @apply w-full ml-[-100%];
+    }
+
     /* We can't use `theme-clean:` or `sidebar-collapsed:` tailwind modifiers
        here because this is the one place in the project where the relevant
        classes are assigned to the same element, not a parent element. */

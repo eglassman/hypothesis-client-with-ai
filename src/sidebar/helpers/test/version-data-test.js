@@ -1,3 +1,4 @@
+import { clientVersion } from '../../../test-util/client-version';
 import { VersionData } from '../version-data';
 
 describe('sidebar/helpers/version-data', () => {
@@ -19,7 +20,7 @@ describe('sidebar/helpers/version-data', () => {
 
     it('sets `version`', () => {
       const versionData = new VersionData({}, []);
-      assert.equal(versionData.version, '1.0.0-dummy-version');
+      assert.equal(versionData.version, clientVersion);
     });
 
     it('sets `userAgent`', () => {

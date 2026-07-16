@@ -56,6 +56,19 @@ describe('ModerationControl', () => {
     assert.isFalse(wrapper.exists('ModerationStatusBadge'));
   });
 
+  it('renders ModerationStatusSelect when annotation has ai-pending tag without moderate action', () => {
+    const wrapper = createComponent({
+      annotation: {
+        ...defaultAnnotation(),
+        tags: ['ai-pending'],
+        moderation_status: 'PENDING',
+      },
+    });
+
+    assert.isTrue(wrapper.exists('ModerationStatusSelect'));
+    assert.isFalse(wrapper.exists('ModerationStatusBadge'));
+  });
+
   it('renders ModerationStatusSelect for APPROVED annotations in non-pre-moderated groups, if annotation is flagged', () => {
     const wrapper = createComponent({
       annotation: {
@@ -113,7 +126,6 @@ describe('ModerationControl', () => {
       assert.calledWith(
         fakeToastMessenger.notice,
         'The annotation has been updated since this page was loaded. Review this new version and try again.',
-        { autoDismiss: false },
       );
       assert.notCalled(fakeToastMessenger.error);
     });

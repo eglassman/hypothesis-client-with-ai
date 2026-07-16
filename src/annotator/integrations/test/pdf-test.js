@@ -423,7 +423,11 @@ describe('annotator/integrations/pdf', () => {
 
         assert.equal(anchor.highlights.length, 0);
         assert.isUndefined(anchor.region);
-        assert.calledWith(fakeAnnotator.anchor, anchor.annotation);
+        assert.calledWith(
+          fakeAnnotator.anchor,
+          anchor.annotation,
+          sinon.match({ preserveExistingHighlights: true }),
+        );
       });
 
       it('does not re-anchor annotations whose highlights are still in the page', async () => {

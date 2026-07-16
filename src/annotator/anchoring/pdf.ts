@@ -8,6 +8,7 @@ import type {
   Selector,
   ShapeSelector,
 } from '../../types/api';
+import { TextQuoteAnchor } from './types';
 import type {
   PDFPageProxy,
   PDFPageView,
@@ -19,7 +20,12 @@ import { matchQuote } from './match-quote';
 import { createPlaceholder } from './placeholder';
 import { textInDOMRect } from './text-in-rect';
 import { TextPosition, TextRange } from './text-range';
-import { TextQuoteAnchor } from './types';
+import {
+  firstWordOfSpan,
+  pdfLineBreakHyphensInRange,
+  wordFragmentBeforeLineBreakHyphen,
+} from './pdf-line-break-hyphen';
+import type { PdfLineBreakHyphenCase } from './pdf-line-break-hyphen';
 
 type PDFTextRange = {
   pageIndex: number;
@@ -381,25 +387,19 @@ function stripSpaces(str: string) {
   return stripped;
 }
 
+type QuoteMatch = {
+  pageIndex: number;
+  start: number;
+  end: number;
+};
+
 /**
- * Search for a quote in the given pages.
- *
- * When comparing quote selectors to document text, ASCII whitespace characters
- * are ignored. This is because text extracted from a PDF by different PDF
- * viewers, including different versions of PDF.js, can often differ in the
- * whitespace between characters and words. For a long time PDF.js in particular
- * had issues where it would often produce extra spaces between characters that
- * should not be there or omit spaces between words.
- *
- * @param [positionHint] - Expected start offset of quote
- * @return - Location of quote
+ * Search for a quote in the document and return page-local character offsets.
  */
-async function anchorQuote(
+async function findQuoteInDocument(
   quoteSelector: TextQuoteSelector,
   positionHint?: number,
-): Promise<Range> {
-  // Determine which pages to search and in what order. If we have a position
-  // hint we'll try to use that. Otherwise we'll just search all pages in order.
+): Promise<QuoteMatch | null> {
   const pageCount = getPDFViewer().pagesCount;
   const pageIndexes = Array(pageCount)
     .fill(0)
@@ -408,13 +408,11 @@ async function anchorQuote(
   let expectedPageIndex;
   let expectedOffsetInPage;
 
-  if (positionHint) {
+  if (positionHint !== undefined) {
     const { index, offset } = await findPageByOffset(positionHint);
     expectedPageIndex = index;
     expectedOffsetInPage = positionHint - offset;
 
-    // Sort pages by distance from the page where we expect to find the quote,
-    // based on the position hint.
     pageIndexes.sort((a, b) => {
       const distA = Math.abs(a - index);
       const distB = Math.abs(b - index);
@@ -422,7 +420,6 @@ async function anchorQuote(
     });
   }
 
-  // Search pages for the best match, ignoring whitespace differences.
   const strippedPrefix =
     quoteSelector.prefix !== undefined
       ? stripSpaces(quoteSelector.prefix)
@@ -433,31 +430,29 @@ async function anchorQuote(
       : undefined;
   const strippedQuote = stripSpaces(quoteSelector.exact);
 
-  let bestMatch;
+  let bestMatch: {
+    page: number;
+    match: { start: number; end: number; score: number };
+  } | null = null;
   for (const page of pageIndexes) {
     const text = await getPageTextContent(page);
     const strippedText = stripSpaces(text);
 
-    // Determine expected offset of quote in current page based on position hint.
     let strippedHint;
     if (expectedPageIndex !== undefined && expectedOffsetInPage !== undefined) {
       if (page < expectedPageIndex) {
-        strippedHint = strippedText.length; // Prefer matches closer to end of page.
+        strippedHint = strippedText.length;
       } else if (page === expectedPageIndex) {
-        // Translate expected offset in whitespace-inclusive version of page
-        // text into offset in whitespace-stripped version of page text.
         [strippedHint] = translateOffsets(
           text,
           strippedText,
           expectedOffsetInPage,
           expectedOffsetInPage,
           isNotSpace,
-          // We don't need to normalize here since both input strings are
-          // derived from the same input.
           { normalize: false },
         );
       } else {
-        strippedHint = 0; // Prefer matches closer to start of page.
+        strippedHint = 0;
       }
     }
 
@@ -472,8 +467,6 @@ async function anchorQuote(
     }
 
     if (!bestMatch || match.score > bestMatch.match.score) {
-      // Translate match offset from whitespace-stripped version of page text
-      // back to original text.
       const [start, end] = translateOffsets(
         strippedText,
         text,
@@ -490,15 +483,6 @@ async function anchorQuote(
         },
       };
 
-      // If we find a very good match, stop early.
-      //
-      // There is a tradeoff here between optimizing search performance and
-      // ensuring that we have found the best match in the document.
-      //
-      // The current heuristics are that we require an exact match for the quote
-      // and either the preceding or following context. The context matching
-      // helps to avoid incorrectly stopping the search early if the quote is
-      // a word or phrase that is common in the document.
       const exactQuoteMatch =
         strippedText.slice(match.start, match.end) === strippedQuote;
 
@@ -511,7 +495,8 @@ async function anchorQuote(
 
       const exactSuffixMatch =
         strippedSuffix !== undefined &&
-        strippedText.slice(match.end, strippedSuffix.length) === strippedSuffix;
+        strippedText.slice(match.end, match.end + strippedSuffix.length) ===
+          strippedSuffix;
 
       const hasContext =
         strippedPrefix !== undefined || strippedSuffix !== undefined;
@@ -525,24 +510,70 @@ async function anchorQuote(
     }
   }
 
-  if (bestMatch) {
-    const { page, match } = bestMatch;
-
-    // If we found a match, optimize future anchoring of this selector in the
-    // same session by caching the match location.
-    if (positionHint) {
-      const cacheKey = quotePositionCacheKey(quoteSelector.exact, positionHint);
-      quotePositionCache.set(cacheKey, {
-        pageIndex: page,
-        anchor: match,
-      });
-    }
-
-    // Convert the (start, end) position match into a DOM range.
-    return anchorByPosition(page, match.start, match.end);
+  if (!bestMatch) {
+    return null;
   }
 
-  throw new Error('Quote not found');
+  return {
+    pageIndex: bestMatch.page,
+    start: bestMatch.match.start,
+    end: bestMatch.match.end,
+  };
+}
+
+async function anchorQuote(
+  quoteSelector: TextQuoteSelector,
+  positionHint?: number,
+): Promise<Range> {
+  const match = await findQuoteInDocument(quoteSelector, positionHint);
+  if (!match) {
+    throw new Error('Quote not found');
+  }
+
+  if (positionHint !== undefined) {
+    const cacheKey = quotePositionCacheKey(quoteSelector.exact, positionHint);
+    quotePositionCache.set(cacheKey, {
+      pageIndex: match.pageIndex,
+      anchor: { start: match.start, end: match.end },
+    });
+  }
+
+  return anchorByPosition(match.pageIndex, match.start, match.end);
+}
+
+/**
+ * Build position and page selectors from quote-only selectors without rendering
+ * the PDF page text layer.
+ */
+export async function describeQuoteOnly(
+  selectors: Selector[],
+): Promise<Selector[]> {
+  const quote = selectors.find(s => s.type === 'TextQuoteSelector') as
+    | TextQuoteSelector
+    | undefined;
+  if (!quote) {
+    throw new Error('No quote selector found');
+  }
+
+  const position = selectors.find(s => s.type === 'TextPositionSelector') as
+    | TextPositionSelector
+    | undefined;
+
+  const match = await findQuoteInDocument(quote, position?.start);
+  if (!match) {
+    throw new Error('Quote not found');
+  }
+
+  const pageOffset = await getPageOffset(match.pageIndex);
+  const pageView = await getPageView(match.pageIndex);
+
+  const positionSelector = {
+    type: 'TextPositionSelector',
+    start: pageOffset + match.start,
+    end: pageOffset + match.end,
+  } as TextPositionSelector;
+
+  return [positionSelector, createPageSelector(pageView, match.pageIndex)];
 }
 
 /**
@@ -763,6 +794,97 @@ function getContainingPageIndex(el: Element): number {
 }
 
 /**
+ * Fraction of the em size (approximated by span height) used as the minimum
+ * horizontal gap to infer a word space. Word spaces in typical fonts are
+ * ~0.25 em; 0.15 gives comfortable detection while ignoring sub-pixel
+ * rendering gaps within a word.
+ */
+const WORD_GAP_EM_RATIO = 0.15;
+
+/**
+ * Build a page-text string from the text layer that inserts spaces wherever
+ * the pdfjs renderer left a visible gap between adjacent spans (i.e. where
+ * `textContent` would concatenate two words without a space).
+ *
+ * Also returns `fromOrigOffset`, which maps a character offset in the
+ * original `textLayer.textContent` string to the corresponding offset in the
+ * returned space-aware string.  This lets `describe()` reuse the position
+ * offsets already computed by `TextPosition` without recomputing them.
+ */
+function buildSpaceAwareTextLayerText(textLayer: Element): {
+  text: string;
+  fromOrigOffset: (offset: number) => number;
+  lineBreakHyphens: PdfLineBreakHyphenCase[];
+} {
+  // Real pdfjs renders text items as <span> elements; the test fake uses <div>.
+  // Filter to elements that carry text directly (no child elements with text),
+  // so nested containers don't double-count characters.
+  const spans = Array.from(
+    textLayer.querySelectorAll<HTMLElement>('span, div'),
+  ).filter(el => {
+    if ((el.textContent?.length ?? 0) === 0) {
+      return false;
+    }
+    // Exclude container elements — keep only leaf text elements.
+    return el.querySelector('span, div') === null;
+  });
+
+  let text = '';
+  const origToSpaceAware: number[] = [];
+  const lineBreakHyphens: PdfLineBreakHyphenCase[] = [];
+  let origOffset = 0;
+
+  for (let i = 0; i < spans.length; i++) {
+    const spanText = spans[i].textContent ?? '';
+
+    if (i > 0 && spanText.length > 0) {
+      const prevRect = spans[i - 1].getBoundingClientRect();
+      const currRect = spans[i].getBoundingClientRect();
+      const sameLine =
+        Math.abs(prevRect.top - currRect.top) <
+        Math.min(prevRect.height, currRect.height) * 0.5;
+      if (sameLine) {
+        const gap = currRect.left - prevRect.right;
+        const threshold =
+          Math.min(prevRect.height, currRect.height) * WORD_GAP_EM_RATIO;
+        if (gap > threshold) {
+          text += ' ';
+        }
+      } else {
+        // Cross-line boundary: insert a space, or record a line-break hyphen case.
+        const prevText = spans[i - 1].textContent ?? '';
+        if (prevText.trimEnd().endsWith('-')) {
+          const broken = wordFragmentBeforeLineBreakHyphen(prevText);
+          const nextWord = firstWordOfSpan(spanText);
+          if (broken && nextWord && text.endsWith('-')) {
+            lineBreakHyphens.push({
+              before: broken.fragment,
+              after: nextWord.word,
+              hyphenIndex: text.length - 1,
+            });
+          }
+        } else {
+          text += ' ';
+        }
+      }
+    }
+
+    for (const ch of spanText) {
+      origToSpaceAware[origOffset] = text.length;
+      text += ch;
+      origOffset++;
+    }
+  }
+  origToSpaceAware[origOffset] = text.length;
+
+  return {
+    text,
+    fromOrigOffset: (n: number) => origToSpaceAware[n] ?? text.length,
+    lineBreakHyphens,
+  };
+}
+
+/**
  * Convert a DOM Range object into a set of selectors.
  *
  * Converts a DOM `Range` object into a `[position, quote]` tuple of selectors
@@ -796,6 +918,28 @@ export async function describe(range: Range): Promise<Selector[]> {
   } as TextPositionSelector;
 
   const quote = TextQuoteAnchor.fromRange(pageView.div, textRange).toSelector();
+
+  // Compute a space-aware display string for the quote. pdfjs renders words as
+  // separate absolutely-positioned spans with no text-node space between them,
+  // so `textContent` concatenates adjacent words. Insert spaces where visible
+  // gaps exist so the quote reads naturally in the sidebar.
+  const { text: layerText, fromOrigOffset, lineBreakHyphens } =
+    buildSpaceAwareTextLayerText(textLayer);
+  const saStart = fromOrigOffset(startPos.offset);
+  const saEnd = fromOrigOffset(endPos.offset);
+  const displayExact = layerText.slice(saStart, saEnd).replace(/\s+/g, ' ').trim();
+  const hyphenCases = pdfLineBreakHyphensInRange(
+    lineBreakHyphens,
+    saStart,
+    saEnd,
+  );
+  if (hyphenCases.length > 0) {
+    quote.pdfLineBreakHyphens = hyphenCases;
+  }
+  if (displayExact !== quote.exact) {
+    quote.displayExact = displayExact;
+  }
+
   const pageSelector = createPageSelector(pageView, startPageIndex);
 
   return [position, quote, pageSelector];

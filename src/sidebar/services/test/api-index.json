@@ -41,6 +41,13 @@
         "url": "https://example.com/api/groups/:id",
         "method": "GET",
         "desc": "Fetch a group."
+      },
+      "annotations": {
+        "read": {
+          "url": "https://example.com/api/groups/:pubid/annotations",
+          "method": "GET",
+          "desc": "List annotations in a group"
+        }
       }
     },
     "links": {

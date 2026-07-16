@@ -40,8 +40,59 @@ describe('TagListItem', () => {
     const onRemoveTag = sinon.stub();
     const wrapper = createComponent({ onRemoveTag });
 
-    wrapper.find('button').simulate('click');
+    wrapper.find('button[title="Remove tag: my tag"]').simulate('click');
     assert.calledOnce(onRemoveTag);
+    assert.calledWith(onRemoveTag, 'my tag');
+  });
+
+  it('renders mark-negative button when callback provided', () => {
+    const onMarkNegativeExample = sinon.stub();
+    const wrapper = createComponent({
+      tag: 'methods',
+      onMarkNegativeExample,
+    });
+
+    assert.isTrue(
+      wrapper
+        .find('button[title="Mark as negative example: methods"]')
+        .exists(),
+    );
+  });
+
+  it('invokes mark-negative callback when clicked', () => {
+    const onMarkNegativeExample = sinon.stub();
+    const wrapper = createComponent({
+      tag: 'methods',
+      onMarkNegativeExample,
+    });
+
+    wrapper
+      .find('button[title="Mark as negative example: methods"]')
+      .simulate('click');
+    assert.calledWith(onMarkNegativeExample, 'methods');
+  });
+
+  it('renders revert-positive button when callback provided', () => {
+    const onRevertNegativeExample = sinon.stub();
+    const wrapper = createComponent({
+      tag: 'methods-neg-example',
+      onRevertNegativeExample,
+    });
+
+    assert.isTrue(
+      wrapper
+        .find('button[title="Revert to positive example: methods-neg-example"]')
+        .exists(),
+    );
+  });
+
+  it('disables action buttons when `disabled` is true', () => {
+    const onRemoveTag = sinon.stub();
+    const wrapper = createComponent({ onRemoveTag, disabled: true });
+
+    assert.isTrue(
+      wrapper.find('button[title="Remove tag: my tag"]').props().disabled,
+    );
   });
 
   it(

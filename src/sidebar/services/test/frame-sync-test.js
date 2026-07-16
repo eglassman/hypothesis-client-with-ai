@@ -3,6 +3,7 @@ import sinon from 'sinon';
 
 import { EventEmitter } from '../../../shared/event-emitter';
 import { Injector } from '../../../shared/injector';
+import { tagInventoryRowId } from '../../store/modules/sidebar-panels';
 import * as annotationFixtures from '../../test/annotation-fixtures';
 import { fakeReduxStore } from '../../test/fake-redux-store';
 import { FrameSyncService, $imports, formatAnnot } from '../frame-sync';
@@ -76,7 +77,10 @@ describe('FrameSyncService', () => {
   let setupPortRPC;
 
   beforeEach(() => {
-    fakeAnnotationsService = { create: sinon.stub() };
+    fakeAnnotationsService = {
+      create: sinon.stub(),
+      persistEnrichedTargetIfChanged: sinon.stub(),
+    };
     fakeToastMessenger = new EventEmitter();
     fakePortRPCs = [];
     setupPortRPC = null;
@@ -159,6 +163,16 @@ describe('FrameSyncService', () => {
           return this.getState().frames;
         },
 
+        mainFrame() {
+          return (
+            this.getState().frames.find(frame => frame.id === null) ?? null
+          );
+        },
+
+        defaultContentFrame() {
+          return this.mainFrame() ?? this.getState().frames[0] ?? null;
+        },
+
         getContentInfo() {
           return this.getState().contentInfo;
         },
@@ -167,10 +181,21 @@ describe('FrameSyncService', () => {
           this.setState({ contentInfo: info });
         },
 
+        addAnnotations: sinon.stub(),
+        addTagInventoryRow: sinon.stub(),
+        aiSearchPanelAnnotateManually: sinon.stub().returns(false),
+        aiSearchPanelQueryInput: sinon.stub().returns(null),
+        aiSearchPanelSchemaTagInput: sinon.stub().returns(''),
+        tagInventoryRows: sinon.stub().returns([]),
+        findAnnotationByID: sinon.stub().returns(null),
+        getDraft: sinon.stub().returns(null),
         findIDsForTags: sinon.stub().returns([]),
         focusedGroup: sinon.stub().returns({ id: 'foobar' }),
+        focusedGroupId: sinon.stub().returns('foobar'),
         getFocusFilters: sinon.stub().returns({}),
+        hasFetchedAnnotations: sinon.stub().returns(true),
         hoverAnnotations: sinon.stub(),
+        isSidebarPanelOpen: sinon.stub().returns(false),
         isLoggedIn: sinon.stub().returns(false),
         openSidebarPanel: sinon.stub(),
         selectAnnotations: sinon.stub(),
@@ -229,6 +254,11 @@ describe('FrameSyncService', () => {
 
   function emitGuestEvent(event, ...args) {
     guestRPC().emit(event, ...args);
+  }
+
+  /** Flush microtasks after async guest RPC handlers (e.g. createAnnotation). */
+  async function flushGuestHandlers() {
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   /**
@@ -304,6 +334,7 @@ describe('FrameSyncService', () => {
         '$tag',
         'target',
         'uri',
+        'tags',
       ]);
     });
   });
@@ -545,6 +576,66 @@ describe('FrameSyncService', () => {
       );
     });
 
+    it('re-sends existing annotations when tag classes change', async () => {
+      const frameInfo = fixtures.htmlDocumentInfo;
+      await connectGuest();
+      emitGuestEvent('documentInfoChanged', frameInfo);
+
+      const before = {
+        ...fixtures.ann,
+        id: 'a1',
+        tags: ['tag-a'],
+      };
+      const after = {
+        ...before,
+        tags: ['tag-b'],
+      };
+      fakeStore.setState({ annotations: [before] });
+      guestRPC().call.resetHistory();
+
+      fakeStore.setState({ annotations: [after] });
+
+      assert.calledWithMatch(
+        guestRPC().call,
+        'loadAnnotations',
+        sinon.match([formatAnnot(after)]),
+      );
+    });
+
+    it('does not re-send when only location selectors are enriched', async () => {
+      const frameInfo = fixtures.htmlDocumentInfo;
+      await connectGuest();
+      emitGuestEvent('documentInfoChanged', frameInfo);
+
+      const before = {
+        ...fixtures.ann,
+        id: 'a1',
+        tags: ['tag-a', 'tag-b'],
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      const after = {
+        ...before,
+        target: [
+          {
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      fakeStore.setState({ annotations: [before] });
+      guestRPC().call.resetHistory();
+
+      fakeStore.setState({ annotations: [after] });
+
+      assert.isFalse(guestRPC().call.calledWith('loadAnnotations'));
+    });
+
     it('does not send a "loadAnnotations" message for replies', async () => {
       await connectGuest();
 
@@ -643,6 +734,7 @@ describe('FrameSyncService', () => {
       fakeStore.isLoggedIn.returns(true);
 
       emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+      await flushGuestHandlers();
 
       assert.calledWith(hostRPC().call, 'showHighlights');
     });
@@ -658,19 +750,41 @@ describe('FrameSyncService', () => {
         const ann = { $tag: 't1', target: [] };
 
         emitGuestEvent('createAnnotation', ann);
+        await flushGuestHandlers();
 
         assert.calledWith(fakeAnnotationsService.create, ann);
+      });
+
+      it('injects schema tag and upserts history row when manual annotate toggle is enabled', async () => {
+        fakeStore.isLoggedIn.returns(true);
+        fakeStore.aiSearchPanelAnnotateManually.returns(true);
+        fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+        fakeStore.aiSearchPanelQueryInput.returns('query');
+        const ann = { $tag: 't1', target: [], tags: [] };
+
+        emitGuestEvent('createAnnotation', ann);
+        await flushGuestHandlers();
+
+        assert.deepEqual(ann.tags, ['methods']);
+        assert.calledWith(fakeStore.addTagInventoryRow, {
+          id: tagInventoryRowId('methods', 'query', 'foobar'),
+          groupId: 'foobar',
+          schemaTag: 'methods',
+          query: 'query',
+          annotationIds: [],
+        });
       });
 
       it('opens the sidebar ready for the user to edit the draft', async () => {
         fakeStore.isLoggedIn.returns(true);
 
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(hostRPC().call, 'openSidebar');
       });
 
-      it('does not open the sidebar if the annotation is a highlight', () => {
+      it('opens the AI search panel if the annotation is a highlight', async () => {
         fakeStore.isLoggedIn.returns(true);
 
         emitGuestEvent('createAnnotation', {
@@ -678,26 +792,31 @@ describe('FrameSyncService', () => {
           $highlight: true,
           target: [],
         });
+        await flushGuestHandlers();
 
-        assert.neverCalledWith(hostRPC().call, 'openSidebar');
+        assert.calledWith(hostRPC().call, 'openSidebar');
+        assert.calledWith(fakeStore.openSidebarPanel, 'aiSearchAnnotations');
       });
     });
 
     const addCommonNotReadyTests = () => {
-      it('should not create an annotation in the sidebar', () => {
+      it('should not create an annotation in the sidebar', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.notCalled(fakeAnnotationsService.create);
       });
 
-      it('should open the sidebar', () => {
+      it('should open the sidebar', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(hostRPC().call, 'openSidebar');
       });
 
-      it('should send a "deleteAnnotation" message to the frame', () => {
+      it('should send a "deleteAnnotation" message to the frame', async () => {
         emitGuestEvent('createAnnotation', { $tag: 't1', target: [] });
+        await flushGuestHandlers();
 
         assert.calledWith(guestRPC().call, 'deleteAnnotation');
       });
@@ -751,6 +870,161 @@ describe('FrameSyncService', () => {
       expireDebounceTimeout(clock);
 
       assert.calledWith(fakeStore.updateAnchorStatus, { t1: 'anchored' });
+    });
+
+    it('merges full annotation payload into the store', () => {
+      fakeStore.findAnnotationByID = sinon.stub().withArgs('id1').returns({
+        id: 'id1',
+        $tag: 't1',
+        tags: [],
+        text: '',
+        target: [],
+      });
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+              { type: 'TextQuoteSelector', exact: 'hello' },
+            ],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            target: ann.target,
+          }),
+        ]),
+      );
+    });
+
+    it('persists enriched target when location selectors are merged', () => {
+      const before = {
+        id: 'id1',
+        $tag: 't1',
+        $orphan: false,
+        tags: [],
+        text: '',
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns(before);
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [
+              { type: 'TextQuoteSelector', exact: 'hello' },
+              { type: 'TextPositionSelector', start: 0, end: 5 },
+            ],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeAnnotationsService.persistEnrichedTargetIfChanged,
+        before,
+        sinon.match({ id: 'id1', target: ann.target }),
+      );
+    });
+
+    it('preserves sidebar tags when guest sends stale empty tags on syncAnchoringStatus', () => {
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns({
+          id: 'id1',
+          $tag: 't1',
+          tags: ['keep-me'],
+          text: '',
+          target: [],
+        });
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        tags: [],
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            tags: ['keep-me'],
+          }),
+        ]),
+      );
+    });
+
+    it('preserves sidebar permissions when guest payload omits permissions', () => {
+      fakeStore.findAnnotationByID = sinon
+        .stub()
+        .withArgs('id1')
+        .returns({
+          id: 'id1',
+          $tag: 't1',
+          tags: ['keep-me'],
+          text: '',
+          target: [],
+          permissions: {
+            read: ['group:gid'],
+            update: ['acct:u'],
+            delete: ['acct:u'],
+          },
+        });
+
+      const ann = {
+        $tag: 't1',
+        $orphan: false,
+        id: 'id1',
+        target: [
+          {
+            selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
+          },
+        ],
+      };
+      emitGuestEvent('syncAnchoringStatus', ann);
+
+      assert.calledWith(
+        fakeStore.addAnnotations,
+        sinon.match([
+          sinon.match({
+            id: 'id1',
+            permissions: {
+              read: ['group:gid'],
+              update: ['acct:u'],
+              delete: ['acct:u'],
+            },
+          }),
+        ]),
+      );
     });
 
     it('coalesces multiple "syncAnchoringStatus" messages', () => {
@@ -1225,6 +1499,66 @@ describe('FrameSyncService', () => {
     it('unsubscribes from shortcut updates on destroy', () => {
       frameSync.destroy();
       assert.calledOnce(shortcutsUnsubscribe);
+    });
+  });
+
+  describe('sending tag highlight palettes to guest frames', () => {
+    const palette = {
+      'ai-pending': 'rgba(64, 169, 255, 0.38)',
+      methods: 'rgba(1, 2, 3, 0.38)',
+    };
+
+    beforeEach(async () => {
+      await frameSync.connect();
+    });
+
+    it('replays the latest palette to guests when they connect', async () => {
+      frameSync.setTagHighlightPalette(palette);
+
+      await connectGuest();
+
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
+    });
+
+    it('sends updated palettes to connected guests immediately', async () => {
+      await connectGuest();
+      guestRPC().call.resetHistory();
+
+      frameSync.setTagHighlightPalette(palette);
+
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, []);
+    });
+
+    it('forwards hidden annotation tags to connected guests', async () => {
+      fakeStore.setState({
+        annotations: [
+          { id: 'ann-1', $tag: 'guest-tag-1' },
+          { id: 'ann-2', $tag: 'guest-tag-2' },
+        ],
+      });
+      await connectGuest();
+      guestRPC().call.resetHistory();
+
+      frameSync.setTagHighlightPalette(palette, ['ann-1', 'ann-2']);
+
+      assert.calledWith(guestRPC().call, 'setTagHighlightPalette', palette, [
+        'guest-tag-1',
+        'guest-tag-2',
+      ]);
+    });
+
+    it('replays cached palette to later guest connections', async () => {
+      await connectGuest();
+      frameSync.setTagHighlightPalette(palette);
+
+      await connectGuest('iframe');
+
+      assert.calledWith(
+        guestRPC(1).call,
+        'setTagHighlightPalette',
+        palette,
+        [],
+      );
     });
   });
 

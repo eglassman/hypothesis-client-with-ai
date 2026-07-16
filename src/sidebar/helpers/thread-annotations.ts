@@ -1,7 +1,7 @@
 import type { Annotation } from '../../types/api';
 import type { TabName } from '../../types/sidebar';
 import { memoize } from '../util/memoize';
-import { isWaitingToAnchor } from './annotation-metadata';
+import { isWaitingToAnchor, isPendingLocationEnrichment } from './annotation-metadata';
 import { buildThread } from './build-thread';
 import type { Thread, BuildThreadOptions } from './build-thread';
 import { filterAnnotations } from './filter-annotations';
@@ -23,6 +23,9 @@ export type ThreadState = {
     sortKey: 'oldest' | 'newest' | 'location';
     selectedTab: 'annotation' | 'note' | 'orphan';
   };
+
+  /** Annotation IDs from hidden inventory rows (thread-list filter). */
+  hiddenAnnotationIds?: ReadonlySet<string>;
 };
 
 export type ThreadAnnotationsResult = {
@@ -93,6 +96,17 @@ function threadAnnotationsImpl(
     }
   }
 
+  const hiddenIds = threadState.hiddenAnnotationIds;
+  if (hiddenIds && hiddenIds.size > 0) {
+    const priorFilterFn = options.filterFn;
+    options.filterFn = ann => {
+      if (ann.id && hiddenIds.has(ann.id)) {
+        return false;
+      }
+      return priorFilterFn ? priorFilterFn(ann) : true;
+    };
+  }
+
   const rootThread = buildThread(threadState.annotations, options);
 
   const tabCounts = {
@@ -106,6 +120,10 @@ function threadAnnotationsImpl(
       // If this annotation is still anchoring, we do not know whether it should
       // appear in the "Annotations" or "Orphans" tab.
       if (thread.annotation && isWaitingToAnchor(thread.annotation)) {
+        return false;
+      }
+
+      if (thread.annotation && isPendingLocationEnrichment(thread.annotation)) {
         return false;
       }
 

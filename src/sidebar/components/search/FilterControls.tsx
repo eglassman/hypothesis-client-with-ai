@@ -123,9 +123,9 @@ export type FilterControlsProps = {
  *  - Focus filters which show anotations from particular user, page range
  *    etc.
  *  - Selection state
+ *  - Active sidebar search / filter query (eg. tag:…)
  *
- * This doesn't include the state of other layers of filters which have their
- * own UI controls such as search or the annotation type tabs.
+ * Annotation type tabs and similar are separate.
  */
 export default function FilterControls({
   withCardContainer = false,
@@ -141,7 +141,11 @@ export default function FilterControls({
   // Are any focus filters configured?
   const hasFocusFilters = Object.keys(focusFilters).length > 0;
 
-  const hasFilters = hasSelection || hasFocusFilters;
+  const filterQuery = store.filterQuery();
+  const hasFilterQuery = Boolean(filterQuery);
+
+  const hasFilters =
+    hasSelection || hasFocusFilters || hasFilterQuery;
 
   // When there are no active filters, remove the container so its padding
   // doesn't unnecessarily take up empty space.
@@ -199,6 +203,16 @@ export default function FilterControls({
             disabled={hasSelection}
             setActive={() => store.toggleFocusMode({ key: 'cfi' })}
             testId="cfi-focus-toggle"
+          />
+        )}
+        {hasFilterQuery && (
+          <FilterToggle
+            label={`Clear filter: search ${filterQuery}`}
+            description="A search or filter query is narrowing which annotations are shown. Press to clear this filter."
+            active={true}
+            disabled={hasSelection}
+            setActive={() => store.setFilterQuery(null)}
+            testId="filter-query-toggle"
           />
         )}
       </div>

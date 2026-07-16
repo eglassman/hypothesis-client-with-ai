@@ -1,12 +1,12 @@
 import type { Annotation, APIAnnotationData } from '../../types/api';
 import { quote } from '../helpers/annotation-metadata';
+import { contentFrameUri } from '../helpers/document-uri';
 import {
   isShared,
   privatePermissions,
   sharedPermissions,
 } from '../helpers/permissions';
 import type { SidebarStore } from '../store';
-import type { Frame } from '../store/modules/frames';
 import { captureException } from '../util/sentry';
 import type { AnnotationsService } from './annotations';
 import type { ToastMessengerService } from './toast-messenger';
@@ -58,14 +58,15 @@ export type ImportResult =
  */
 function getImportData(
   ann: APIAnnotationData,
-  currentFrame: Frame | null,
+  store: Pick<SidebarStore, 'mainFrame' | 'defaultContentFrame'>,
 ): ImportData {
+  const frame = store.defaultContentFrame();
   return {
     target: ann.target,
     tags: ann.tags,
     text: ann.text,
-    uri: currentFrame?.uri ?? ann.uri,
-    document: currentFrame?.metadata ?? ann.document,
+    uri: contentFrameUri(store) ?? ann.uri,
+    document: frame?.metadata ?? ann.document,
     extra: {
       source: 'import',
       original_id: ann.id,
@@ -179,7 +180,6 @@ export class ImportAnnotationsService {
     }
 
     const existingAnns = this._store.allAnnotations();
-    const currentFrame = this._store.defaultContentFrame();
 
     const importAnn = async (ann: APIAnnotationData): Promise<ImportResult> => {
       const existingAnn = existingAnns.find(ex => duplicateMatch(ann, ex));
@@ -190,7 +190,7 @@ export class ImportAnnotationsService {
       try {
         // Strip out all the fields that are ignored in an import, and overwrite
         // the URI with current document's URI.
-        const importData = getImportData(ann, currentFrame);
+        const importData = getImportData(ann, this._store);
 
         // Fill out the annotation with default values for the current user and
         // group.
@@ -248,13 +248,9 @@ export class ImportAnnotationsService {
     if (messageType === 'success') {
       this._toastMessenger.success(message);
     } else if (messageType === 'notice') {
-      this._toastMessenger.notice(message, {
-        autoDismiss: false,
-      });
+      this._toastMessenger.notice(message);
     } else if (messageType === 'error') {
-      this._toastMessenger.error(message, {
-        autoDismiss: false,
-      });
+      this._toastMessenger.error(message);
     }
 
     return results;

@@ -62,9 +62,11 @@ function SidebarView({
   const hasContentError =
     hasDirectLinkedAnnotationError || hasDirectLinkedGroupError;
 
-  // Whether to render the new filter UI. Note that when the search panel is
-  // open, filter controls are integrated into it. The UI may render nothing
-  // if no filters are configured or selection is active.
+  // Whether to render the new filter UI. When the search panel is open, filter
+  // controls live inside SearchPanel instead. The same floating strip is used
+  // when the AI search panel is open (embedded FilterControls in AISearchPanel
+  // were removed to avoid showing filters twice). The UI may render nothing if
+  // no filters apply.
   const isSearchPanelOpen = store.isSidebarPanelOpen('searchAnnotations');
   const showFilterControls = !hasContentError && !isSearchPanelOpen;
 

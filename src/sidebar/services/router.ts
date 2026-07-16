@@ -1,6 +1,12 @@
 import type { SidebarStore } from '../store';
 
-type RouteName = 'annotation' | 'notebook' | 'profile' | 'stream' | 'sidebar';
+type RouteName =
+  | 'annotation'
+  | 'nodeLink'
+  | 'notebook'
+  | 'profile'
+  | 'stream'
+  | 'sidebar';
 
 type RouteParams = Record<string, string>;
 
@@ -47,6 +53,14 @@ export class RouterService {
 
     let route: RouteName;
 
+    // The browser extension already packages `/client/app.html`. Opening that
+    // shell with `?route=nodeLink` lets the node-link graph run from the
+    // client bundle without requiring a new extension HTML entrypoint.
+    if (mainSegment === 'app' && params.route === 'nodeLink') {
+      delete params.route;
+      return { route: 'nodeLink', params };
+    }
+
     switch (mainSegment) {
       case 'a':
         route = 'annotation';
@@ -54,6 +68,9 @@ export class RouterService {
         break;
       case 'notebook':
         route = 'notebook';
+        break;
+      case 'node-link':
+        route = 'nodeLink';
         break;
       case 'user-profile':
         route = 'profile';
@@ -86,6 +103,9 @@ export class RouterService {
         break;
       case 'notebook':
         url = '/notebook';
+        break;
+      case 'nodeLink':
+        url = '/node-link';
         break;
       case 'profile':
         url = '/user-profile';

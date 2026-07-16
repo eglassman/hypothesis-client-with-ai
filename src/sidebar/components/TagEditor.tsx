@@ -5,6 +5,10 @@ import { useRef, useState } from 'preact/hooks';
 
 import { withServices } from '../service-context';
 import type { TagsService } from '../services/tags';
+import {
+  canMarkTagAsNegativeExample,
+  canRevertNegativeExampleTag,
+} from '../helpers/tag-inventory-group';
 import AutocompleteList from './AutocompleteList';
 import TagList from './TagList';
 import TagListItem from './TagListItem';
@@ -14,7 +18,9 @@ let tagEditorIdCounter = 0;
 
 export type TagEditorProps = {
   onAddTag: (tag: string) => boolean;
+  onMarkNegativeExample?: (tag: string) => void;
   onRemoveTag: (tag: string) => boolean;
+  onRevertNegativeExample?: (tag: string) => void;
   onTagInput: (tag: string) => void;
   tagList: string[];
 
@@ -29,7 +35,9 @@ export type TagEditorProps = {
  */
 function TagEditor({
   onAddTag,
+  onMarkNegativeExample,
   onRemoveTag,
+  onRevertNegativeExample,
   onTagInput,
   tagList,
   tags: tagsService,
@@ -255,7 +263,25 @@ function TagEditor({
     <div className="space-y-4">
       <TagList>
         {tagList.map(tag => {
-          return <TagListItem key={tag} onRemoveTag={onRemoveTag} tag={tag} />;
+          return (
+            <TagListItem
+              key={tag}
+              onRemoveTag={onRemoveTag}
+              onMarkNegativeExample={
+                onMarkNegativeExample &&
+                canMarkTagAsNegativeExample(tagList, tag)
+                  ? onMarkNegativeExample
+                  : undefined
+              }
+              onRevertNegativeExample={
+                onRevertNegativeExample &&
+                canRevertNegativeExampleTag(tagList, tag)
+                  ? onRevertNegativeExample
+                  : undefined
+              }
+              tag={tag}
+            />
+          );
         })}
       </TagList>
       <div

@@ -16,6 +16,10 @@ import {
   isSaved,
   shape,
 } from '../../helpers/annotation-metadata';
+import {
+  retagOneNegativeSchemaTagAsPositive,
+  retagOnePositiveSchemaTagAsNegative,
+} from '../../helpers/tag-inventory-group';
 import type { UserItem } from '../../helpers/mention-suggestions';
 import { combineUsersForMentions } from '../../helpers/mention-suggestions';
 import type { MentionMode } from '../../helpers/mentions';
@@ -141,6 +145,26 @@ function AnnotationEditor({
         return true;
       }
       return false;
+    },
+    [onEditTags, tags],
+  );
+
+  const onMarkNegativeExample = useCallback(
+    (tag: string) => {
+      const newTags = retagOnePositiveSchemaTagAsNegative(tags, tag);
+      if (newTags) {
+        onEditTags(newTags);
+      }
+    },
+    [onEditTags, tags],
+  );
+
+  const onRevertNegativeExample = useCallback(
+    (tag: string) => {
+      const newTags = retagOneNegativeSchemaTagAsPositive(tags, tag);
+      if (newTags) {
+        onEditTags(newTags);
+      }
     },
     [onEditTags, tags],
   );
@@ -306,7 +330,9 @@ function AnnotationEditor({
       />
       <TagEditor
         onAddTag={onAddTag}
+        onMarkNegativeExample={onMarkNegativeExample}
         onRemoveTag={onRemoveTag}
+        onRevertNegativeExample={onRevertNegativeExample}
         onTagInput={setPendingTag}
         tagList={tags}
       />

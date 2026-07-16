@@ -23,18 +23,24 @@ import { APIService } from './services/api';
 import { APIRoutesService } from './services/api-routes';
 import { AuthService } from './services/auth';
 import { AutosaveService } from './services/autosave';
+import { ClaudeService } from './services/claude';
 import { DashboardService } from './services/dashboard';
+import { ExperimentLogService } from './services/experiment-log';
 import { FrameSyncService } from './services/frame-sync';
 import { GroupsService } from './services/groups';
 import { ImportAnnotationsService } from './services/import-annotations';
 import { LoadAnnotationsService } from './services/load-annotations';
 import { LocalStorageService } from './services/local-storage';
+import { NodeLinkStateService } from './services/node-link-state';
 import { PersistedDefaultsService } from './services/persisted-defaults';
+import { PersistedTagInventoryService } from './services/persisted-tag-inventory';
 import { RouterService } from './services/router';
 import { ServiceURLService } from './services/service-url';
 import { SessionService } from './services/session';
 import { StreamFilter } from './services/stream-filter';
 import { StreamerService } from './services/streamer';
+import { TagInventoryGroupSyncService } from './services/tag-inventory-group-sync';
+import { setupTagPaletteSync } from './services/tag-palette-sync';
 import { TagsService } from './services/tags';
 import { ThreadsService } from './services/threads';
 import { ThumbnailService } from './services/thumbnail';
@@ -101,10 +107,14 @@ function loadGroupsAndProfile(groups: GroupsService, session: SessionService) {
 function initServices(
   autosaveService: AutosaveService,
   persistedDefaults: PersistedDefaultsService,
+  persistedTagInventory: PersistedTagInventoryService,
+  tagInventoryGroupSync: TagInventoryGroupSyncService,
   serviceURL: ServiceURLService,
 ) {
   autosaveService.init();
   persistedDefaults.init();
+  persistedTagInventory.init();
+  tagInventoryGroupSync.init();
   serviceURL.init();
 }
 
@@ -118,6 +128,8 @@ function setupFrameSync(
   store: SidebarStore,
   toastMessenger: ToastMessengerService,
 ) {
+  setupTagPaletteSync(frameSync, store);
+
   if (store.route() === 'sidebar') {
     frameSync.connect().catch(() => {
       toastMessenger.error(
@@ -154,7 +166,11 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('importAnnotationsService', ImportAnnotationsService)
     .register('loadAnnotationsService', LoadAnnotationsService)
     .register('localStorage', LocalStorageService)
+    .register('nodeLinkState', NodeLinkStateService)
     .register('persistedDefaults', PersistedDefaultsService)
+    .register('persistedTagInventory', PersistedTagInventoryService)
+    .register('tagInventoryGroupSync', TagInventoryGroupSyncService)
+    .register('claude', ClaudeService)
     .register('router', RouterService)
     .register('serviceURL', ServiceURLService)
     .register('session', SessionService)
@@ -164,7 +180,8 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
     .register('threadsService', ThreadsService)
     .register('thumbnailService', ThumbnailService)
     .register('toastMessenger', ToastMessengerService)
-    .register('store', { factory: createSidebarStore });
+    .register('store', { factory: createSidebarStore })
+    .register('experimentLog', ExperimentLogService);
 
   // Register utility values/classes.
   //
@@ -173,6 +190,11 @@ function startApp(settings: SidebarSettings, appEl: HTMLElement) {
   container
     .register('$window', { value: window })
     .register('settings', { value: settings });
+
+  //if (process.env.NODE_ENV !== 'production') {
+  (window as Window & { __sidebarStore?: SidebarStore }).__sidebarStore =
+    container.get('store') as SidebarStore;
+  //}
 
   // Initialize services.
   //

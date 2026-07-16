@@ -5,6 +5,7 @@ import type { Annotation } from '../../../types/api';
 import type { SidebarSettings } from '../../../types/config';
 import type { TabName } from '../../../types/sidebar';
 import * as metadata from '../../helpers/annotation-metadata';
+import type { ThreadScrollAnchor } from '../../helpers/thread-list-scroll-metrics';
 import { countIf, trueKeys, toTrueMap } from '../../util/collections';
 import { createStoreModule, makeAction } from '../create-store';
 
@@ -21,7 +22,10 @@ const TAB_SORTKEY_DEFAULT: Record<TabName, SortKey> = {
 };
 
 function defaultSortKeyForTab(tab: TabName, commentsMode?: boolean) {
-  return commentsMode ? 'newest' : TAB_SORTKEY_DEFAULT[tab];
+  if (commentsMode && tab === 'note') {
+    return 'newest';
+  }
+  return TAB_SORTKEY_DEFAULT[tab];
 }
 
 function initialSelection(settings: SidebarSettings): BooleanMap {
@@ -70,17 +74,32 @@ export type State = {
    */
   focusRequest: string | null;
 
+  /**
+   * Thread the list should keep at a fixed viewport offset after reorder (e.g.
+   * location sort when selectors are enriched after scrolling the PDF).
+   */
+  threadScrollAnchor: ThreadScrollAnchor | null;
+
+  /**
+   * Set after the first time every annotatable annotation has a sortable
+   * location on initial document load. Live updates do not re-gate the list.
+   */
+  initialLoadLocationReady: boolean;
+
   commentsMode?: boolean;
 };
 
 function initialState(settings: SidebarSettings): State {
+  const selectedTab = settings.commentsMode ? 'note' : 'annotation';
   return {
     selected: initialSelection(settings),
     expanded: initialSelection(settings),
     forcedVisible: {},
-    selectedTab: settings.commentsMode ? 'note' : 'annotation',
-    sortKey: defaultSortKeyForTab('annotation', settings.commentsMode),
+    selectedTab,
+    sortKey: defaultSortKeyForTab(selectedTab, settings.commentsMode),
     focusRequest: null,
+    threadScrollAnchor: null,
+    initialLoadLocationReady: false,
     commentsMode: settings.commentsMode,
   };
 }
@@ -109,6 +128,10 @@ const reducers = {
     return { focusRequest: null };
   },
 
+  CLEAR_THREAD_SCROLL_ANCHOR() {
+    return { threadScrollAnchor: null };
+  },
+
   CLEAR_SELECTION() {
     return resetSelection();
   },
@@ -131,6 +154,18 @@ const reducers = {
     return { focusRequest: action.id };
   },
 
+  SET_THREAD_SCROLL_ANCHOR(
+    state: State,
+    action: { id: string; viewportOffset: number },
+  ) {
+    return {
+      threadScrollAnchor: {
+        id: action.id,
+        viewportOffset: action.viewportOffset,
+      },
+    };
+  },
+
   SET_FORCED_VISIBLE(state: State, action: { id: string; visible: boolean }) {
     return {
       forcedVisible: { ...state.forcedVisible, [action.id]: action.visible },
@@ -141,6 +176,10 @@ const reducers = {
     return { sortKey: action.key };
   },
 
+  SET_INITIAL_LOAD_LOCATION_READY(state: State) {
+    return { initialLoadLocationReady: true };
+  },
+
   TOGGLE_SELECTED_ANNOTATIONS(state: State, action: { toggleIds: string[] }) {
     const selection = { ...state.selected };
     action.toggleIds.forEach(id => {
@@ -149,13 +188,6 @@ const reducers = {
     return { selected: selection };
   },
 
-  /** Actions defined in other modules */
-
-  /**
-   * Automatically select the Page Notes tab, for convenience, if all of the
-   * top-level annotations in `action.annotations` are Page Notes and the
-   * previous annotation count was 0 (i.e. collection empty).
-   */
   ADD_ANNOTATIONS(
     state: State,
     action: { annotations: Annotation[]; currentAnnotationCount: number },
@@ -170,6 +202,10 @@ const reducers = {
       return setTab('note', state.selectedTab, state.commentsMode);
     }
     return {};
+  },
+
+  CLEAR_ANNOTATIONS() {
+    return { initialLoadLocationReady: false };
   },
 
   CHANGE_FOCUS_MODE_USER() {
@@ -266,6 +302,21 @@ function clearAnnotationFocusRequest() {
 }
 
 /**
+ * Keep a thread card in view when the thread list reorders (e.g. after PDF
+ * anchoring adds location selectors). Cleared once the list scroll completes.
+ */
+function setThreadScrollAnchor(id: string, viewportOffset: number) {
+  return makeAction(reducers, 'SET_THREAD_SCROLL_ANCHOR', {
+    id,
+    viewportOffset,
+  });
+}
+
+function clearThreadScrollAnchor() {
+  return makeAction(reducers, 'CLEAR_THREAD_SCROLL_ANCHOR', undefined);
+}
+
+/**
  * Set the currently-selected tab to `tabKey`.
  */
 function selectTab(tabKey: TabName) {
@@ -302,6 +353,10 @@ function setSortKey(key: SortKey) {
   return makeAction(reducers, 'SET_SORT_KEY', { key });
 }
 
+function setInitialLoadLocationReady() {
+  return makeAction(reducers, 'SET_INITIAL_LOAD_LOCATION_READY', undefined);
+}
+
 /**
  * Toggle the selected state for the annotations in `toggledAnnotations`:
  * unselect any that are selected; select any that are unselected.
@@ -321,6 +376,10 @@ function expandedMap(state: State) {
 
 function annotationFocusRequest(state: State) {
   return state.focusRequest;
+}
+
+function threadScrollAnchor(state: State) {
+  return state.threadScrollAnchor;
 }
 
 const forcedVisibleThreads = createSelector(
@@ -368,16 +427,20 @@ function sortKey(state: State) {
   return state.sortKey;
 }
 
+function initialLoadLocationReady(state: State) {
+  return state.initialLoadLocationReady;
+}
+
 /**
  * Retrieve applicable sort options for the currently-selected tab.
  */
 const sortKeys = createSelector(
   (state: State) => state.selectedTab,
-  (state: State) => state.commentsMode,
-  (selectedTab, commentsMode) => {
+  selectedTab => {
     const sortKeysForTab: SortKey[] = ['newest', 'oldest'];
-    if (selectedTab !== 'note' && !commentsMode) {
-      // Location is inapplicable to Notes tab or comments mode
+    // Page notes have no document anchor; location sort is only for tabs
+    // that show anchored annotations.
+    if (selectedTab !== 'note') {
       sortKeysForTab.push('location');
     }
     return sortKeysForTab;
@@ -391,20 +454,25 @@ export const selectionModule = createStoreModule(initialState, {
   actionCreators: {
     clearAnnotationFocusRequest,
     clearSelection,
+    clearThreadScrollAnchor,
     selectAnnotations,
     selectTab,
     setAnnotationFocusRequest,
     setExpanded,
     setForcedVisible,
+    setInitialLoadLocationReady,
     setSortKey,
+    setThreadScrollAnchor,
     toggleSelectedAnnotations,
   },
 
   selectors: {
     expandedMap,
     annotationFocusRequest,
+    threadScrollAnchor,
     forcedVisibleThreads,
     hasSelectedAnnotations,
+    initialLoadLocationReady,
     selectedAnnotations,
     selectedTab,
     selectionState,
