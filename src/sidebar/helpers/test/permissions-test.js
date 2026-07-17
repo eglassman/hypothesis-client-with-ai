@@ -67,10 +67,6 @@ describe('sidebar/helpers/permissions', () => {
       const perms = permissions.privatePermissions(userid);
       assert.isFalse(permissions.isShared(perms));
     });
-
-    it('returns false if permissions are missing', () => {
-      assert.isFalse(permissions.isShared(undefined));
-    });
   });
 
   describe('#isPrivate', () => {
@@ -101,11 +97,6 @@ describe('sidebar/helpers/permissions', () => {
     it('returns false if the userid is null', () => {
       const perms = permissions.privatePermissions(userid);
       assert.isFalse(permissions.permits(perms, 'update', null));
-    });
-
-    it('returns false if permissions are missing', () => {
-      assert.isFalse(permissions.permits(undefined, 'update', userid));
-      assert.isFalse(permissions.permits({ read: [] }, 'delete', userid));
     });
   });
 });

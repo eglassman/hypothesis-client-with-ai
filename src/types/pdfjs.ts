@@ -72,9 +72,6 @@ export type PDFDocument = {
    *         that indicates size of the PDF data in bytes.
    */
   getDownloadInfo(): Promise<{ length: number }>;
-
-  /** Return the raw PDF file bytes once the document is loaded. */
-  getData(): Promise<Uint8Array>;
 };
 
 export type GetTextContentParameters = {

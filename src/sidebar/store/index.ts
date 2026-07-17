@@ -3,7 +3,6 @@ import { useService } from '../service-context';
 import { createStore } from './create-store';
 import { debugMiddleware } from './debug-middleware';
 import { activityModule } from './modules/activity';
-import { aiSearchPanelUIModule } from './modules/ai-search-panel-ui';
 import { annotationsModule } from './modules/annotations';
 import { defaultsModule } from './modules/defaults';
 import { directLinkedModule } from './modules/direct-linked';
@@ -41,7 +40,6 @@ export function createSidebarStore(settings: SidebarSettings) {
   // to infer properties (eg. action and selector methods) of returned store.
   const modules = [
     activityModule,
-    aiSearchPanelUIModule,
     annotationsModule,
     defaultsModule,
     directLinkedModule,

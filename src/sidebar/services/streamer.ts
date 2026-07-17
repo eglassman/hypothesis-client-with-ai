@@ -6,7 +6,6 @@ import { watch } from '../util/watch';
 import { Socket } from '../websocket';
 import type { APIRoutesService } from './api-routes';
 import type { AuthService } from './auth';
-import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { GroupsService } from './groups';
 import type { SessionService } from './session';
 
@@ -29,7 +28,6 @@ import type { SessionService } from './session';
  */
 export class StreamerService {
   private _auth: AuthService;
-  private _tagInventoryGroupSync: TagInventoryGroupSyncService;
   private _groups: GroupsService;
   private _session: SessionService;
   private _store: SidebarStore;
@@ -65,13 +63,11 @@ export class StreamerService {
     store: SidebarStore,
     apiRoutes: APIRoutesService,
     auth: AuthService,
-    tagInventoryGroupSync: TagInventoryGroupSyncService,
     groups: GroupsService,
     session: SessionService,
     $window: Window,
   ) {
     this._auth = auth;
-    this._tagInventoryGroupSync = tagInventoryGroupSync;
     this._groups = groups;
     this._session = session;
     this._store = store;
@@ -122,15 +118,6 @@ export class StreamerService {
     }
 
     this._store.clearPendingUpdates();
-
-    const hadChanges = updates.length > 0 || deletions.length > 0;
-    if (hadChanges) {
-      this._tagInventoryGroupSync.mergePendingUpdatesIntoCache(
-        updates,
-        deletions.map(d => d.id),
-      );
-      void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
-    }
   }
 
   private _handleSocketError(websocketURL: string, event: ErrorEvent) {

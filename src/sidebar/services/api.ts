@@ -163,20 +163,6 @@ type AnnotationSearchResult = {
   total: number;
 };
 
-/**
- * Result of `GET /api/groups/{pubid}/annotations`.
- *
- * NB: This endpoint paginates with `page[after]` (a date-time cursor) +
- * `page[size]` and returns `{ meta, data }` — it is NOT search-compatible
- * (`/api/search` returns `{ rows, total, replies }`).
- *
- * @see https://h.readthedocs.io/en/latest/api-reference/v1/
- */
-type GroupAnnotationsResult = {
-  meta?: { page?: { total?: number } };
-  data: Annotation[];
-};
-
 type IDParam = {
   id: string;
 };
@@ -233,13 +219,6 @@ export class APIService {
     moderate: APICall<IDParam, AnnotationModeration, Annotation>;
   };
   group: {
-    annotations: {
-      read: APICall<
-        { pubid: string } & Record<string, Param | Param[]>,
-        void,
-        GroupAnnotationsResult
-      >;
-    };
     member: {
       delete: APICall<{ pubid: string; userid: string }>;
     };
@@ -323,13 +302,6 @@ export class APIService {
       >,
     };
     this.group = {
-      annotations: {
-        read: apiCall('group.annotations.read') as APICall<
-          { pubid: string } & Record<string, Param | Param[]>,
-          void,
-          GroupAnnotationsResult
-        >,
-      },
       member: {
         delete: apiCall('group.member.delete') as APICall<{
           pubid: string;

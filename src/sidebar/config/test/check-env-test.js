@@ -1,4 +1,3 @@
-import { clientVersion } from '../../../test-util/client-version';
 import { addConfigFragment } from '../../../shared/config-fragment';
 import { checkEnvironment } from '../check-env';
 
@@ -15,7 +14,7 @@ describe('checkEnvironment', () => {
 
     fakeWindow.location.href = addConfigFragment(fakeWindow.location.href, {
       origin: 'https://hypothes.is',
-      version: clientVersion,
+      version: '1.0.0-dummy-version',
     });
 
     sinon.stub(console, 'warn');

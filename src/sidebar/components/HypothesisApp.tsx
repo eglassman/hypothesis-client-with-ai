@@ -1,10 +1,11 @@
 import { confirm } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import { useEffect, useMemo, useRef } from 'preact/hooks';
+import { useEffect, useMemo } from 'preact/hooks';
 
 import type { SidebarSettings } from '../../types/config';
 import { serviceConfig } from '../config/service-config';
 import { isThirdPartyService } from '../helpers/is-third-party-service';
+import { shouldAutoDisplayTutorial } from '../helpers/session';
 import { applyTheme } from '../helpers/theme';
 import { withServices } from '../service-context';
 import type { AuthService } from '../services/auth';
@@ -21,10 +22,6 @@ import SidebarView from './SidebarView';
 import StreamView from './StreamView';
 import ToastMessages from './ToastMessages';
 import TopBar from './TopBar';
-import NodeLinkGraphPage from './node-link/NodeLinkGraphPage';
-import TagLegendPanel from './node-link/TagLegendPanel';
-import AISearchPanel from './search/AISearchPanel';
-import EmptyPanel from './search/EmptyPanel';
 import SearchPanel from './search/SearchPanel';
 
 export type HypothesisAppProps = {
@@ -49,8 +46,8 @@ function HypothesisApp({
   toastMessenger,
 }: HypothesisAppProps) {
   const store = useSidebarStore();
+  const profile = store.profile();
   const route = store.route();
-  const searchUris = store.searchUris();
   const isModalRoute = route === 'notebook' || route === 'profile';
 
   const backgroundStyle = useMemo(
@@ -60,41 +57,14 @@ function HypothesisApp({
   const isThemeClean = settings.theme === 'clean';
 
   const isSidebar = route === 'sidebar';
-  const isFullWidth = store.isSidebarFullWidth();
-  const currentPDFUri = useMemo(
-    () =>
-      searchUris.find(uri => /\.pdf($|[?#])/i.test(uri)) ??
-      searchUris[0] ??
-      null,
-    [searchUris],
-  );
-  const lastAutoOpenedPDFRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!isSidebar || !currentPDFUri) {
-      return;
+    if (shouldAutoDisplayTutorial(isSidebar, profile, settings)) {
+      store.openSidebarPanel('help');
     }
-
-    if (lastAutoOpenedPDFRef.current === currentPDFUri) {
-      return;
-    }
-
-    // TODO: Re-enable tutorial/help auto-open once tutorial/help content is updated.
-    // shouldAutoDisplayTutorial(isSidebar, profile, settings);
-    lastAutoOpenedPDFRef.current = currentPDFUri;
-    store.openSidebarPanel('aiSearchAnnotations');
-  }, [isSidebar, currentPDFUri, store]);
+  }, [isSidebar, profile, settings, store]);
 
   const isThirdParty = isThirdPartyService(settings);
-
-  if (route === 'nodeLink') {
-    return (
-      <>
-        <ToastMessages />
-        <NodeLinkGraphPage />
-      </>
-    );
-  }
 
   const loginOrSignUp = async (action: 'login' | 'signup') => {
     try {
@@ -194,13 +164,10 @@ function HypothesisApp({
           isSidebar={isSidebar}
         />
       )}
-      <div className={isFullWidth ? 'px-[100px]' : 'container'}>
+      <div className="container">
         <ToastMessages />
         <HelpPanel />
         <SearchPanel />
-        <AISearchPanel />
-        <EmptyPanel />
-        <TagLegendPanel />
         <SharePanel shareTab={!isThirdParty} />
 
         {route && (

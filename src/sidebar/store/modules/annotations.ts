@@ -103,29 +103,6 @@ function findByTag(annotations: Annotation[], tag: string) {
 }
 
 /**
- * If the same `ADD_ANNOTATIONS` action includes multiple entries with the same
- * `id`, merge them (later fields win) into one. Otherwise each entry only looks
- * up {@link findByID} in the previous store state, so every duplicate id gets a
- * new `$tag` and the same logical annotation appears many times.
- */
-function mergeAnnotationsWithSameId(annotations: Annotation[]): Annotation[] {
-  const byId = new Map<string, Annotation>();
-  const withoutId: Annotation[] = [];
-
-  for (const annot of annotations) {
-    if (annot.id) {
-      const prev = byId.get(annot.id);
-      const merged = prev ? Object.assign({}, prev, annot) : annot;
-      byId.set(annot.id, merged);
-    } else {
-      withoutId.push(annot);
-    }
-  }
-
-  return [...byId.values(), ...withoutId];
-}
-
-/**
  * Merge client annotation data into the annotation object about to be added to
  * the store's collection of `annotations`.
  *
@@ -137,7 +114,7 @@ function mergeAnnotationsWithSameId(annotations: Annotation[]): Annotation[] {
  * @return - API annotation data with client annotation data merged
  */
 function initializeAnnotation(
-  annotation: Omit<Annotation, '$anchorTimeout' | '$locationTimeout'>,
+  annotation: Omit<Annotation, '$anchorTimeout'>,
   tag: string,
   currentUserId: string | null,
 ): Annotation {
@@ -155,7 +132,6 @@ function initializeAnnotation(
 
   return Object.assign({}, annotation, {
     $anchorTimeout: false,
-    $locationTimeout: false,
     $cluster,
     $tag: annotation.$tag || tag,
     $orphan: orphan,
@@ -179,9 +155,7 @@ const reducers = {
     const updated = [];
     let nextTag = state.nextTag;
 
-    const actionAnnotations = mergeAnnotationsWithSameId(action.annotations);
-
-    for (const annot of actionAnnotations) {
+    for (const annot of action.annotations) {
       let existing;
       if (annot.id) {
         existing = findByID(state.annotations, annot.id);
@@ -193,8 +167,7 @@ const reducers = {
       if (existing) {
         // Merge the updated annotation with the private fields from the local
         // annotation
-        const merged = Object.assign({}, existing, annot);
-        updated.push(merged);
+        updated.push(Object.assign({}, existing, annot));
         if (annot.id) {
           updatedIDs.add(annot.id);
         }
@@ -295,20 +268,6 @@ const reducers = {
     });
     return { annotations };
   },
-
-  UPDATE_LOCATION_ENRICHMENT_TIMEOUT(
-    state: State,
-    action: { tags: string[] },
-  ): Partial<State> {
-    const timedOut = new Set(action.tags);
-    const annotations = state.annotations.map(annot => {
-      if (!timedOut.has(annot.$tag)) {
-        return annot;
-      }
-      return Object.assign({}, annot, { $locationTimeout: true });
-    });
-    return { annotations };
-  },
 };
 
 /* Action creators */
@@ -326,15 +285,7 @@ function addAnnotations(annotations: Annotation[]) {
       session: SessionState;
     },
   ) {
-    const annotationsForStore = mergeAnnotationsWithSameId(
-      annotations.map(annot =>
-        annot.tags?.includes('ai-pending')
-          ? { ...annot, moderation_status: 'PENDING' as const }
-          : annot,
-      ),
-    );
-
-    const added = annotationsForStore.filter(annot => {
+    const added = annotations.filter(annot => {
       return (
         !annot.id || !findByID(getState().annotations.annotations, annot.id)
       );
@@ -344,7 +295,7 @@ function addAnnotations(annotations: Annotation[]) {
 
     dispatch(
       makeAction(reducers, 'ADD_ANNOTATIONS', {
-        annotations: annotationsForStore,
+        annotations,
         currentAnnotationCount: getState().annotations.annotations.length,
         currentUserId: profile.userid,
       }),
@@ -451,10 +402,6 @@ function updateFlagStatus(id: string, isFlagged: boolean) {
   return makeAction(reducers, 'UPDATE_FLAG_STATUS', { id, isFlagged });
 }
 
-function updateLocationEnrichmentTimeout(tags: string[]) {
-  return makeAction(reducers, 'UPDATE_LOCATION_ENRICHMENT_TIMEOUT', { tags });
-}
-
 /* Selectors */
 
 /**
@@ -533,11 +480,6 @@ function isAnnotationHovered(state: State, $tag: string) {
 const isWaitingToAnchorAnnotations = createSelector(
   (state: State) => state.annotations,
   annotations => annotations.some(metadata.isWaitingToAnchor),
-);
-
-const isWaitingForLocationEnrichment = createSelector(
-  (state: State) => state.annotations,
-  annotations => annotations.some(metadata.isPendingLocationEnrichment),
 );
 
 /**
@@ -655,7 +597,6 @@ export const annotationsModule = createStoreModule(initialState, {
     removeAnnotations,
     updateAnchorStatus,
     updateFlagStatus,
-    updateLocationEnrichmentTimeout,
   },
   selectors: {
     allAnnotations,
@@ -668,7 +609,6 @@ export const annotationsModule = createStoreModule(initialState, {
     isAnnotationHighlighted,
     isAnnotationHovered,
     isWaitingToAnchorAnnotations,
-    isWaitingForLocationEnrichment,
     newAnnotations,
     newHighlights,
     noteCount,

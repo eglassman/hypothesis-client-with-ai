@@ -19,12 +19,6 @@ describe('SearchField', () => {
     input.simulate('input');
   }
 
-  function typeQueryTextarea(wrapper, query) {
-    const textarea = wrapper.find('textarea');
-    textarea.getDOMNode().value = query;
-    textarea.simulate('input');
-  }
-
   function getClearButton(wrapper) {
     return wrapper.find('button[data-testid="clear-button"]');
   }
@@ -77,19 +71,6 @@ describe('SearchField', () => {
     typeQuery(wrapper, '');
     wrapper.find('form').simulate('submit');
     assert.notCalled(onSearch);
-  });
-
-  it('allows initial empty query submit when `allowSubmitWithJustTag` is true', () => {
-    const onSearch = sinon.stub();
-    const wrapper = createSearchField({
-      onSearch,
-      allowSubmitWithJustTag: true,
-    });
-
-    typeQuery(wrapper, '');
-    wrapper.find('form').simulate('submit');
-
-    assert.calledWith(onSearch, '');
   });
 
   it('sets subsequent empty queries if entered', () => {
@@ -174,101 +155,6 @@ describe('SearchField', () => {
     });
   });
 
-  it('renders a textarea and full-width submit when multiline and label are set', () => {
-    const wrapper = createSearchField({
-      multiline: true,
-      fullWidthSubmitLabel: 'Ask AI for Annotations',
-      query: null,
-      onSearch: sinon.stub(),
-      onClearSearch: sinon.stub(),
-    });
-    assert.isTrue(wrapper.find('textarea').exists());
-    assert.isFalse(wrapper.find('input').exists());
-    assert.equal(
-      wrapper.find('[data-testid="search-submit-button"]').first().text(),
-      'Ask AI for Annotations',
-    );
-  });
-
-  it('renders leading content before submit button in AI layout', () => {
-    const wrapper = createSearchField({
-      multiline: true,
-      fullWidthSubmitLabel: 'Ask AI for Annotations',
-      fullWidthSubmitLeading: (
-        <button data-testid="leading-control" type="button">
-          Annotate Manually
-        </button>
-      ),
-      query: null,
-      onSearch: sinon.stub(),
-      onClearSearch: sinon.stub(),
-    });
-
-    const row = wrapper.find('form > div').at(1);
-    assert.equal(row.find('[data-testid="leading-control"]').exists(), true);
-    assert.equal(
-      row.find('[data-testid="search-submit-button"]').exists(),
-      true,
-    );
-  });
-
-  it('invokes `onSearch` on Enter in multiline field when Shift is not held', () => {
-    const onSearch = sinon.stub();
-    const wrapper = createSearchField({
-      query: 'foo',
-      onSearch,
-      multiline: true,
-      fullWidthSubmitLabel: 'Ask AI for Annotations',
-      onClearSearch: sinon.stub(),
-    });
-    typeQueryTextarea(wrapper, 'new-query');
-    wrapper.find('textarea').simulate('keydown', {
-      key: 'Enter',
-      shiftKey: false,
-    });
-    assert.calledWith(onSearch, 'new-query');
-  });
-
-  it('does not invoke `onSearch` on Shift+Enter in multiline field', () => {
-    const onSearch = sinon.stub();
-    const wrapper = createSearchField({
-      query: 'foo',
-      onSearch,
-      multiline: true,
-      fullWidthSubmitLabel: 'Ask AI for Annotations',
-      onClearSearch: sinon.stub(),
-    });
-    typeQueryTextarea(wrapper, 'new-query');
-    wrapper.find('textarea').simulate('keydown', {
-      key: 'Enter',
-      shiftKey: true,
-    });
-    assert.notCalled(onSearch);
-  });
-
-  it('disables textarea, clear, and full-width submit when `disabled` is true', () => {
-    const query = 'some query';
-    const wrapper = createSearchField({
-      disabled: true,
-      query,
-      multiline: true,
-      fullWidthSubmitLabel: 'Ask AI for Annotations',
-      onSearch: sinon.stub(),
-      onClearSearch: sinon.stub(),
-    });
-    assert.isTrue(wrapper.find('textarea').prop('disabled'));
-    assert.deepEqual(
-      wrapper.find('button').map(btn => btn.prop('disabled')),
-      [true, true],
-    );
-    const submitClasses = wrapper
-      .find('[data-testid="search-submit-button"]')
-      .first()
-      .prop('classes');
-    assert.include(submitClasses, 'opacity-50');
-    assert.include(submitClasses, 'cursor-not-allowed');
-  });
-
   it(
     'should pass a11y checks',
     checkAccessibility([
@@ -281,17 +167,6 @@ describe('SearchField', () => {
           fakeStore.isLoading.returns(true);
           return createSearchField();
         },
-      },
-      {
-        name: 'multiline with full-width submit',
-        content: () =>
-          createSearchField({
-            multiline: true,
-            fullWidthSubmitLabel: 'Ask AI for Annotations',
-            query: 'q',
-            onSearch: sinon.stub(),
-            onClearSearch: sinon.stub(),
-          }),
       },
     ]),
   );

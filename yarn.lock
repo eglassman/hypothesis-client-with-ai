@@ -19,22 +19,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@anthropic-ai/sdk@npm:^0.80.0":
-  version: 0.80.0
-  resolution: "@anthropic-ai/sdk@npm:0.80.0"
-  dependencies:
-    json-schema-to-ts: ^3.1.1
-  peerDependencies:
-    zod: ^3.25.0 || ^4.0.0
-  peerDependenciesMeta:
-    zod:
-      optional: true
-  bin:
-    anthropic-ai-sdk: bin/cli
-  checksum: f1894fcca570a5f0145641bff36c970ae5e9c58e0d73282a39b39f8975a5105a92a9f778c14fc9f3aae1566b7ec1110af7615cc45e80324b0b928932321b6498
-  languageName: node
-  linkType: hard
-
 "@aws-crypto/crc32@npm:5.2.0":
   version: 5.2.0
   resolution: "@aws-crypto/crc32@npm:5.2.0"
@@ -2203,13 +2187,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/runtime@npm:^7.18.3":
-  version: 7.29.2
-  resolution: "@babel/runtime@npm:7.29.2"
-  checksum: d5548d1165de8995f8afc93a5694b8625409be16cd1f2250ac13e331335858ddac3cb9fd278e6c43956a130101a2203f09417938a1a96f9fb70f02b4b4172e1d
-  languageName: node
-  linkType: hard
-
 "@babel/template@npm:^7.27.0":
   version: 7.27.0
   resolution: "@babel/template@npm:7.27.0"
@@ -2783,7 +2760,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@hypothesis/frontend-build@npm:5.1.0":
+"@hypothesis/frontend-build@npm:^5.1.0":
   version: 5.1.0
   resolution: "@hypothesis/frontend-build@npm:5.1.0"
   dependencies:
@@ -2807,33 +2784,6 @@ __metadata:
     tailwindcss:
       optional: true
   checksum: 38131aa73178f74a03689ca6eeb1307c835143cecb1e0c1632d8a6a10591bd46a153da87f37dd8b21d03eaf7ab0ec86b5898dc56fda4cb2034c8a8760baf760d
-  languageName: node
-  linkType: hard
-
-"@hypothesis/frontend-build@patch:@hypothesis/frontend-build@npm%3A5.1.0#./.yarn/patches/@hypothesis-frontend-build-npm-5.1.0-8ebc1687f9.patch::locator=hypothesis-with-ai%40workspace%3A.":
-  version: 5.1.0
-  resolution: "@hypothesis/frontend-build@patch:@hypothesis/frontend-build@npm%3A5.1.0#./.yarn/patches/@hypothesis-frontend-build-npm-5.1.0-8ebc1687f9.patch::version=5.1.0&hash=d28e62&locator=hypothesis-with-ai%40workspace%3A."
-  dependencies:
-    commander: ^14.0.0
-    fancy-log: ^2.0.0
-    glob: ^11.0.0
-  peerDependencies:
-    "@tailwindcss/postcss": ^4.1.13
-    postcss: ^8.3.9
-    rollup: ^4.0.2
-    sass: ^1.43.2
-    tailwindcss: ^3.0.11 || ^4.1.0
-    vitest: ^3.1.1 || ^4.0.1
-  peerDependenciesMeta:
-    "@tailwindcss/postcss":
-      optional: true
-    postcss:
-      optional: true
-    sass:
-      optional: true
-    tailwindcss:
-      optional: true
-  checksum: 8b48f29078c7bf3d636ce59f079e2c35cfb8019c42f354bd279a66cc5d280f8cdff5ab858db3b500c727d02fd79498f24315bbf41f2bd88bc606f97b33de5ebe
   languageName: node
   linkType: hard
 
@@ -6368,10 +6318,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"caniuse-lite@npm:^1.0.30001688, caniuse-lite@npm:^1.0.30001726":
-  version: 1.0.30001777
-  resolution: "caniuse-lite@npm:1.0.30001777"
-  checksum: 962e97beb3a21d84ee7b5a04d68b5dc55cd3a84ff14f1ec6ad031a76ade8432a2d5d4a9697099d2f7e197f707d4f2698a01b756c8c68a30a13b37ded09c9b58a
+"caniuse-lite@npm:^1.0.30001688":
+  version: 1.0.30001705
+  resolution: "caniuse-lite@npm:1.0.30001705"
+  checksum: 42c3b2164bc1f9522dccc80c9770f2825c229a3a6b2e7448c3c7bf330bba45dcb69496e32256a0dd6bf136a2f33617cb23883634132145d6787746a5770aba16
+  languageName: node
+  linkType: hard
+
+"caniuse-lite@npm:^1.0.30001726":
+  version: 1.0.30001727
+  resolution: "caniuse-lite@npm:1.0.30001727"
+  checksum: 2bc6112f242701198a99c17713d4409be9b404d09005f34f351ec29a4ea46c054e7aa4982bc16f06b81b7a375cbc61c937e89650170cbce84db772a376ed3963
   languageName: node
   linkType: hard
 
@@ -8720,11 +8677,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"hypothesis-with-ai@workspace:.":
+"hypothesis@workspace:.":
   version: 0.0.0-use.local
-  resolution: "hypothesis-with-ai@workspace:."
+  resolution: "hypothesis@workspace:."
   dependencies:
-    "@anthropic-ai/sdk": ^0.80.0
     "@aws-sdk/client-s3": ^3.504.0
     "@babel/core": ^7.1.6
     "@babel/preset-env": ^7.1.6
@@ -8813,7 +8769,6 @@ __metadata:
     typescript-eslint: ^8.10.0
     vitest: ^4.0.1
     wrap-text: ^1.0.7
-    zod: ^4.3.6
   languageName: unknown
   linkType: soft
 
@@ -9503,16 +9458,6 @@ __metadata:
   version: 5.0.0
   resolution: "json-parse-even-better-errors@npm:5.0.0"
   checksum: b5aeaa65e072bc3bda2cb1da50bf1822814b4aa7c568e7c2bed25af89d730f113dcb74393da574c0a32e889eeba4a826db600b8a6ecef917c59c8c6b38f2efaa
-  languageName: node
-  linkType: hard
-
-"json-schema-to-ts@npm:^3.1.1":
-  version: 3.1.1
-  resolution: "json-schema-to-ts@npm:3.1.1"
-  dependencies:
-    "@babel/runtime": ^7.18.3
-    ts-algebra: ^2.0.0
-  checksum: b616f1c2d7492502e11eec4f8e4539ee1e897543a679d929494afdc164d9557275cead8372747b73f239b1e68056ffbf551b03ae82d0047bba0dfe2bbd6b64f4
   languageName: node
   linkType: hard
 
@@ -12839,13 +12784,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ts-algebra@npm:^2.0.0":
-  version: 2.0.0
-  resolution: "ts-algebra@npm:2.0.0"
-  checksum: 970b0e7db49cf8c1a8ff2a816eb047fac8add47511f5e4995e4998c56c6f7b226399284412de88f3e137ab55c857a4262c0d8f02f0765730e7d3a021de2ea7ef
-  languageName: node
-  linkType: hard
-
 "ts-api-utils@npm:^2.1.0":
   version: 2.1.0
   resolution: "ts-api-utils@npm:2.1.0"
@@ -13691,12 +13629,5 @@ __metadata:
   version: 4.1.12
   resolution: "zod@npm:4.1.12"
   checksum: 91174acc7d2ca5572ad522643474ddd60640cf6877b5d76e5d583eb25e3c4072c6f5eb92ab94f231ec5ce61c6acdfc3e0166de45fb1005b1ea54986b026b765f
-  languageName: node
-  linkType: hard
-
-"zod@npm:^4.3.6":
-  version: 4.3.6
-  resolution: "zod@npm:4.3.6"
-  checksum: 19cec761b46bae4b6e7e861ea740f3f248e50a6671825afc8a5758e27b35d6f20ccde9942422fd5cf6f8b697f18bd05ef8bb33f5f2db112ab25cc628de2fae47
   languageName: node
   linkType: hard

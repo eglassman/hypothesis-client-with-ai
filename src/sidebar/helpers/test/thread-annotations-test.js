@@ -126,29 +126,13 @@ describe('sidebar/helpers/thread-annotations', () => {
 
     describe('annotation and thread filtering', () => {
       context('when `showTabs` is true', () => {
-        function withSortableLocation(annotation) {
-          const target = annotation.target[0];
-          return {
-            ...annotation,
-            target: [
-              {
-                ...target,
-                selector: [
-                  ...(target.selector ?? []),
-                  { type: 'TextPositionSelector', start: 0, end: 5 },
-                ],
-              },
-            ],
-          };
-        }
-
         function annotationForTab(tab) {
           switch (tab) {
             case 'annotation':
-              return withSortableLocation({
+              return {
                 ...annotationFixtures.defaultAnnotation(),
                 $orphan: false,
-              });
+              };
             case 'note':
               return annotationFixtures.oldPageNote();
             case 'orphan':
@@ -250,10 +234,10 @@ describe('sidebar/helpers/thread-annotations', () => {
         ['note', 'annotation', 'orphan'].forEach(selectedTab => {
           it(`should filter the thread for the tab '${selectedTab}'`, () => {
             fakeThreadState.annotations = [
-              withSortableLocation({
+              {
                 ...annotationFixtures.defaultAnnotation(),
                 $orphan: false,
-              }),
+              },
               annotationFixtures.oldPageNote(),
               {
                 ...annotationFixtures.defaultAnnotation(),
@@ -352,37 +336,6 @@ describe('sidebar/helpers/thread-annotations', () => {
           sinon.match.any,
           sinon.match({ user: 'somebody' }),
         );
-      });
-
-      it('hides annotations whose IDs are in hiddenAnnotationIds', () => {
-        const hiddenAnn = annotationFixtures.defaultAnnotation();
-        hiddenAnn.id = 'hidden-ann-id';
-        hiddenAnn.uri = 'http://example.com/doc.pdf';
-        hiddenAnn.tags = ['methods', 'ai-user-approved'];
-        hiddenAnn.text = 'find it';
-
-        fakeThreadState.hiddenAnnotationIds = new Set(['hidden-ann-id']);
-
-        threadAnnotations(fakeThreadState);
-
-        const filterFn = fakeBuildThread.args[0][1].filterFn;
-        assert.isFunction(filterFn);
-        assert.isFalse(filterFn(hiddenAnn));
-      });
-
-      it('does not hide annotations when ID is not in hiddenAnnotationIds', () => {
-        const ann = annotationFixtures.defaultAnnotation();
-        ann.id = 'visible-ann-id';
-        ann.uri = 'http://example.com/doc.pdf';
-        ann.tags = ['results', 'ai-user-approved'];
-        ann.text = 'find it';
-
-        fakeThreadState.hiddenAnnotationIds = new Set(['other-ann-id']);
-
-        threadAnnotations(fakeThreadState);
-
-        const filterFn = fakeBuildThread.args[0][1].filterFn;
-        assert.isTrue(filterFn(ann));
       });
     });
   });

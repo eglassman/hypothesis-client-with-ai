@@ -3,8 +3,6 @@ import { isReply } from '../helpers/annotation-metadata';
 import { SearchClient } from '../search-client';
 import type { SortBy, SortOrder } from '../search-client';
 import type { SidebarStore } from '../store';
-import { PUBLIC_GROUP_ID } from '../helpers/groups';
-import type { TagInventoryGroupSyncService } from './tag-inventory-group-sync';
 import type { APIService } from './api';
 import type { StreamFilter } from './stream-filter';
 import type { StreamerService } from './streamer';
@@ -51,7 +49,6 @@ export type LoadAnnotationOptions = {
  */
 export class LoadAnnotationsService {
   private _api: APIService;
-  private _tagInventoryGroupSync: TagInventoryGroupSyncService;
   private _store: SidebarStore;
   private _streamer: StreamerService;
   private _streamFilter: StreamFilter;
@@ -59,13 +56,11 @@ export class LoadAnnotationsService {
 
   constructor(
     api: APIService,
-    tagInventoryGroupSync: TagInventoryGroupSyncService,
     store: SidebarStore,
     streamer: StreamerService,
     streamFilter: StreamFilter,
   ) {
     this._api = api;
-    this._tagInventoryGroupSync = tagInventoryGroupSync;
     this._store = store;
     this._streamer = streamer;
     this._streamFilter = streamFilter;
@@ -172,23 +167,6 @@ export class LoadAnnotationsService {
         });
       }
       this._store.annotationFetchFinished();
-
-      if (uris && uris.length > 0) {
-        if (groupId === PUBLIC_GROUP_ID) {
-          void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory({
-            documentUris: uris,
-          });
-        } else {
-          void this._tagInventoryGroupSync
-            .getGroupAnnotations(groupId)
-            .catch(err => {
-              console.warn(
-                '[TagInventoryGroupSync] group annotations load failed',
-                err,
-              );
-            });
-        }
-      }
     });
 
     this._store.annotationFetchStarted();

@@ -17,10 +17,6 @@ describe('sidebar/components/hooks/use-root-thread', () => {
       route: sinon.stub().returns('sidebar'),
       selectionState: sinon.stub().returns({ hi: 'there' }),
       getFilterValues: sinon.stub().returns({ user: 'hotspur' }),
-      focusedGroupId: sinon.stub().returns('group-1'),
-      tagInventoryRows: sinon.stub().returns([]),
-      mainFrame: sinon.stub().returns({ uri: 'http://example.com/doc.pdf' }),
-      searchUris: sinon.stub().returns(['http://example.com/doc.pdf']),
     };
     fakeThreadAnnotations = sinon.stub().returns({
       rootThread: {
@@ -52,34 +48,7 @@ describe('sidebar/components/hooks/use-root-thread', () => {
     assert.equal(threadState.selection.filterQuery, 'itchy');
     assert.equal(threadState.showTabs, true);
     assert.equal(threadState.selection.filters.user, 'hotspur');
-    assert.deepEqual(threadState.hiddenAnnotationIds, new Set());
     assert.equal(lastRootThread, fakeThreadAnnotations());
-  });
-
-  it('passes hidden annotation IDs from hidden rows visible in the focused group', () => {
-    fakeStore.tagInventoryRows.returns([
-      {
-        id: 'r1',
-        groupId: 'group-1',
-        schemaTag: 'methods',
-        query: 'q',
-        annotationIds: ['ann-hidden'],
-        hidden: true,
-      },
-      {
-        id: 'r2',
-        groupId: 'group-2',
-        schemaTag: 'other',
-        query: '',
-        annotationIds: ['ann-other'],
-        hidden: true,
-      },
-    ]);
-
-    mount(<DummyComponent />);
-
-    const threadState = fakeThreadAnnotations.getCall(0).args[0];
-    assert.deepEqual(threadState.hiddenAnnotationIds, new Set(['ann-hidden']));
   });
 
   [

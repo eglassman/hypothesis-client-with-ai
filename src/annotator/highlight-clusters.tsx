@@ -136,10 +136,7 @@ export class HighlightClusterController implements Destroyable {
   }
 
   _isActive() {
-    // TODO: Re-enable this flag read once clustered highlight ordering no longer
-    // conflicts with multi-tag PDF overlays.
-    // return this._features.flagEnabled('styled_highlight_clusters');
-    return false;
+    return this._features.flagEnabled('styled_highlight_clusters');
   }
 
   /**

@@ -4,24 +4,21 @@ import {
   Spinner,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
-import { useCallback, useMemo, useState } from 'preact/hooks';
+import { useMemo } from 'preact/hooks';
 
-import type { Annotation as IAnnotation, SavedAnnotation } from '../../../types/api';
+import type { Annotation as IAnnotation } from '../../../types/api';
 import type { SidebarSettings } from '../../../types/config';
 import {
   annotationRole,
   isOrphan,
-  isReply,
   isSaved,
   description,
   quote,
   shape,
 } from '../../helpers/annotation-metadata';
 import { annotationDisplayName } from '../../helpers/annotation-user';
-import { permits } from '../../helpers/permissions';
 import { withServices } from '../../service-context';
 import type { AnnotationsService } from '../../services/annotations';
-import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import ModerationControl from '../moderation/ModerationControl';
 import AnnotationActionBar from './AnnotationActionBar';
@@ -71,7 +68,6 @@ export type AnnotationProps = {
   // injected
   annotationsService: AnnotationsService;
   settings: SidebarSettings;
-  toastMessenger: ToastMessengerService;
 };
 
 /**
@@ -87,10 +83,8 @@ function Annotation({
   threadIsCollapsed,
   annotationsService,
   settings,
-  toastMessenger,
 }: AnnotationProps) {
   const store = useSidebarStore();
-  const [tagActionsSaving, setTagActionsSaving] = useState(false);
 
   const annotationQuote = quote(annotation);
   const targetDescription = description(annotation);
@@ -134,56 +128,6 @@ function Annotation({
 
   const targetShape = useMemo(() => shape(annotation), [annotation]);
 
-  const canEditAnnotationTags =
-    isSaved(annotation) &&
-    !isReply &&
-    !!userid &&
-    permits(annotation.permissions, 'update', userid);
-
-  const runTagAction = useCallback(
-    async (action: (ann: SavedAnnotation) => Promise<unknown>) => {
-      if (!isSaved(annotation)) {
-        return;
-      }
-      setTagActionsSaving(true);
-      try {
-        await action(annotation);
-      } catch (err) {
-        toastMessenger.error(err.message);
-      } finally {
-        setTagActionsSaving(false);
-      }
-    },
-    [annotation, toastMessenger],
-  );
-
-  const onRemoveTag = useCallback(
-    (tag: string) => {
-      void runTagAction(ann =>
-        annotationsService.removeTagFromAnnotation(ann, tag),
-      );
-    },
-    [annotationsService, runTagAction],
-  );
-
-  const onMarkNegativeExample = useCallback(
-    (tag: string) => {
-      void runTagAction(ann =>
-        annotationsService.markTagAsNegativeExample(ann, tag),
-      );
-    },
-    [annotationsService, runTagAction],
-  );
-
-  const onRevertNegativeExample = useCallback(
-    (tag: string) => {
-      void runTagAction(ann =>
-        annotationsService.revertNegativeExampleTag(ann, tag),
-      );
-    },
-    [annotationsService, runTagAction],
-  );
-
   return (
     <article
       className="space-y-4"
@@ -213,14 +157,7 @@ function Annotation({
       )}
 
       {!isCollapsedReply && !isEditing && (
-        <AnnotationBody
-          annotation={annotation}
-          canEditTags={canEditAnnotationTags}
-          tagActionsDisabled={tagActionsSaving}
-          onMarkNegativeExample={onMarkNegativeExample}
-          onRemoveTag={onRemoveTag}
-          onRevertNegativeExample={onRevertNegativeExample}
-        />
+        <AnnotationBody annotation={annotation} />
       )}
 
       {isEditing && <AnnotationEditor annotation={annotation} draft={draft} />}
@@ -255,8 +192,4 @@ function Annotation({
   );
 }
 
-export default withServices(Annotation, [
-  'annotationsService',
-  'settings',
-  'toastMessenger',
-]);
+export default withServices(Annotation, ['annotationsService', 'settings']);

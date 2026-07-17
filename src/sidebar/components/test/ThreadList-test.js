@@ -60,8 +60,6 @@ describe('ThreadList', () => {
       highlightedAnnotations: sinon.stub().returns([]),
       allAnnotations: sinon.stub().returns([]),
       profile: sinon.stub().returns({ userid: 'current_user_id' }),
-      threadScrollAnchor: sinon.stub().returns(null),
-      clearThreadScrollAnchor: sinon.stub(),
     };
 
     fakeTopThread = {
@@ -100,13 +98,6 @@ describe('ThreadList', () => {
       '../helpers/visible-threads': fakeVisibleThreadsUtil,
       '../helpers/highlighted-annotations': {
         mostRelevantAnnotation: fakeMostRelevantAnnotation,
-      },
-      // Replace lodash.debounce with an immediate-call shim that also exposes
-      // the .cancel() method that ThreadList calls on cleanup.
-      'lodash.debounce': fn => {
-        const immediate = (...args) => fn(...args);
-        immediate.cancel = () => {};
-        return immediate;
       },
     });
     sinon.stub(console, 'warn');
@@ -201,42 +192,6 @@ describe('ThreadList', () => {
       // should be at 600px. This setting of `scrollTop` is the only
       // externally-observable thing that happens here...
       assert.calledWith(fakeScrollTop, 600);
-    });
-
-    it('includes list top offset when scrolling to a thread', () => {
-      const wrapper = createComponent();
-      const listRoot = wrapper.find('[role="list"]').getDOMNode();
-
-      sinon.stub(fakeScrollContainer, 'getBoundingClientRect').callsFake(() => ({
-        x: 0,
-        y: 100,
-        width: 320,
-        height: 400,
-        top: 100,
-        right: 320,
-        bottom: 500,
-        left: 0,
-        toJSON() {},
-      }));
-      sinon.stub(listRoot, 'getBoundingClientRect').callsFake(() => ({
-        x: 0,
-        y: 280,
-        width: 320,
-        height: 200,
-        top: 280,
-        right: 320,
-        bottom: 480,
-        left: 0,
-        toJSON() {},
-      }));
-
-      act(() => {
-        fakeScrollContainer.dispatchEvent(new Event('scroll'));
-      });
-      wrapper.update();
-
-      addNewAnnotation(wrapper, fakeTopThread.children[3].annotation);
-      assert.calledWith(fakeScrollTop, 780);
     });
 
     it('should do nothing for highlighted annotations while creating/editing', () => {

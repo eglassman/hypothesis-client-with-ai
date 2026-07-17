@@ -24,11 +24,7 @@ describe('ThreadCard', () => {
   }
 
   beforeEach(() => {
-    fakeDebounce = sinon.stub().callsFake(fn => {
-      const debounced = sinon.spy(fn);
-      debounced.cancel = sinon.stub();
-      return debounced;
-    });
+    fakeDebounce = sinon.stub().returnsArg(0);
     fakeFrameSync = {
       hoverAnnotation: sinon.stub(),
       scrollToAnnotation: sinon.stub(),
@@ -40,7 +36,6 @@ describe('ThreadCard', () => {
       route: sinon.stub(),
       isAnnotationHighlighted: sinon.stub().returns(false),
       profile: sinon.stub().returns({ userid: '123' }),
-      setThreadScrollAnchor: sinon.stub(),
     };
 
     fakeThread = {
@@ -51,10 +46,6 @@ describe('ThreadCard', () => {
     $imports.$mock(mockImportedComponents());
     $imports.$mock({
       'lodash.debounce': fakeDebounce,
-      '../helpers/thread-list-scroll-metrics': {
-        getThreadListScrollContainer: () => document.body,
-        threadViewportOffset: sinon.stub().returns(120),
-      },
       '../store': { useSidebarStore: () => fakeStore },
     });
   });
@@ -88,7 +79,6 @@ describe('ThreadCard', () => {
         fakeFrameSync.scrollToAnnotation,
         fakeThread.annotation,
       );
-      assert.calledWith(fakeStore.setThreadScrollAnchor, fakeThread.id, 120);
     });
 
     it('focuses the annotation thread when mouse enters', () => {
