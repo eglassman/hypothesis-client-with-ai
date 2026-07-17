@@ -47,6 +47,7 @@ import {
   isNegativeSchemaTag,
   isTagInventoryRowVisibleInScope,
   listAnnotationsForTagInventoryRow,
+  positiveSchemaTags,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
 import {
@@ -60,6 +61,7 @@ import {
   isClaudeDocumentDownloadError,
   type ClaudeSearchResult,
   type ClaudeService,
+  type QuoteTagClassification,
 } from '../../services/claude';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { FrameSyncService } from '../../services/frame-sync';
@@ -559,6 +561,87 @@ function AISearchPanel({
       }
       if (created.length) {
         store.addAnnotations(created);
+      }
+
+      // Step 2: for each returned quote, identify any OTHER group tags that also apply.
+      // This never creates new annotations — it only adds tags to already-created ones.
+      // Collect all unique positive schema tags seen across the group's annotations,
+      // excluding the primary tag already on these annotations and internal tags.
+      const allGroupTagsSet = new Set<string>();
+      for (const ann of fewShotAnnotations) {
+        if (!(ann.tags ?? []).includes('ai-user-approved')) {
+          continue;
+        }
+        for (const t of positiveSchemaTags(ann.tags ?? [])) {
+          allGroupTagsSet.add(t);
+        }
+      }
+      const otherTags = [...allGroupTagsSet].filter(
+        t => t.trim() !== tagTrim && !t.startsWith('node-link-state'),
+      );
+      console.log('[AISearch Step 2] otherTags:', otherTags, 'created:', created.length, 'aborted:', signal.aborted);
+      if (created.length > 0 && otherTags.length > 0 && !signal.aborted) {
+        try {
+          toastMessenger.notice('Identifying additional tags…');
+          const quoteTexts = created.map(ann => annotationQuote(ann) ?? '');
+          const classifications: QuoteTagClassification[] =
+            await claude.classifyQuotesForOtherTags({
+              quotes: quoteTexts,
+              tags: otherTags,
+              apiKey: claude.apiKey(),
+              signal,
+            });
+
+          console.log('[AISearch Step 2] classifications:', JSON.stringify(classifications));
+          const validTagSet = new Set(otherTags);
+          const savedAnns = store.savedAnnotations();
+          for (const { quoteIndex, additionalTags } of classifications) {
+            if (signal.aborted) {
+              break;
+            }
+            const ann = created[quoteIndex];
+            if (!ann?.id || !additionalTags.length) {
+              continue;
+            }
+            const quoteText = (annotationQuote(ann) ?? '').trim();
+            const extraTags = additionalTags.filter(
+              t => validTagSet.has(t) && !(ann.tags ?? []).includes(t),
+            );
+            console.log('[AISearch Step 2] quoteIndex:', quoteIndex, 'additionalTags:', additionalTags, 'extraTags:', extraTags);
+            for (const extraTag of extraTags) {
+              // Skip if any existing annotation already covers this quote+tag.
+              const alreadyCovered = savedAnns.some(
+                existing =>
+                  existing.uri === documentUri &&
+                  (existing.tags ?? []).includes(extraTag) &&
+                  (annotationQuote(existing) ?? '').trim() === quoteText,
+              );
+              if (alreadyCovered) {
+                continue;
+              }
+              // Create a new ai-pending annotation for this extra tag with an
+              // empty text/query so it doesn't inherit the primary tag's query.
+              const extraPayload = {
+                group: groupId,
+                uri: documentUri,
+                target: ann.target,
+                text: '',
+                tags: expectedTagsForStrictAISearchPending(extraTag),
+                permissions: sharedPermissions(userid, groupId),
+              };
+              const newAnn = await api.annotation.create({}, extraPayload);
+              console.log('[AISearch Step 2] created annotation for', extraTag, 'id:', newAnn.id);
+              store.addAnnotations([newAnn]);
+            }
+          }
+        } catch (err) {
+          if (!isAbortError(err)) {
+            console.warn(
+              '[AISearch] Step 2 tag classification failed (non-fatal):',
+              err,
+            );
+          }
+        }
       }
 
       const newIds = created

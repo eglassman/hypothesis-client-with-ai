@@ -269,7 +269,8 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
 
   // Scroll so the split column boundary is centered after aligned table renders.
   useEffect(() => {
-    if (alignCategory === null || !isFullWidth) return;
+    if (alignCategory === null && searchText.trim().length === 0) return;
+    if (!isFullWidth) return;
     const container = alignedScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
@@ -280,7 +281,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
       const stickyW = stickyTd?.offsetWidth ?? 0;
       container.scrollLeft = leftTd.offsetWidth - (container.clientWidth - stickyW) / 2;
     });
-  }, [alignCategory, searchCategoryIds.length, isFullWidth, rawSpanMap]);
+  }, [alignCategory, searchCategoryIds.length, searchText, isFullWidth, rawSpanMap]);
 
   const updateCategory = (i: number, field: 'name' | 'description', value: string) =>
     setCategoryRows(rows => { const u = [...rows]; u[i] = { ...u[i], [field]: value }; return u; });
@@ -601,7 +602,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
           )}
 
           {/* Annotations — aligned table or card list */}
-          {alignCategory !== null && isFullWidth ? (
+          {(alignCategory !== null || q.length > 0) && isFullWidth ? (
             <div ref={alignedScrollRef} style={{ overflowX: 'auto', backgroundColor: 'white' }}>
               <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: 'white' }}>
                 <tbody>
@@ -616,9 +617,12 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
                       const firstCat = rawSpans?.find(s => s.label === searchCategoryIds[0]);
                       const secondCat = rawSpans?.find(s => s.label === searchCategoryIds[1]);
                       ({ left, right } = splitAtTwoOffsets(excerptText, labeledSpans, firstCat?.end ?? 0, secondCat?.start ?? (firstCat?.end ?? 0)));
-                    } else {
+                    } else if (alignCategory !== null) {
                       const firstAlignSpan = rawSpans?.find(s => s.label === alignCategory);
                       ({ left, right } = splitAtOffset(excerptText, labeledSpans, firstAlignSpan?.start ?? 0));
+                    } else {
+                      const offset = excerptText.toLowerCase().indexOf(q);
+                      ({ left, right } = splitAtOffset(excerptText, labeledSpans, offset >= 0 ? offset : 0));
                     }
                     return [(
                       <tr key={ann.id} style={{ backgroundColor: 'white', position: 'relative', zIndex: hoveredRowId === ann.id ? 50 : 0 }} onMouseEnter={() => setHoveredRowId(ann.id)} onMouseLeave={() => setHoveredRowId(null)}>
@@ -657,7 +661,6 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
                         ) : excerptText}
                       </blockquote>
                     )}
-                    {ann.text && <p className="text-color-text text-sm">{ann.text}</p>}
                   </li>
                 );
               })}

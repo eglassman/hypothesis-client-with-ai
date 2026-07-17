@@ -16,6 +16,37 @@ const PassageSchema = z.object({
 
 const PassagesSchema = z.array(PassageSchema);
 
+const QuoteTagClassificationsSchema = z.object({
+  classifications: z
+    .array(
+      z.object({
+        quoteIndex: z
+          .number()
+          .int()
+          .describe('Zero-based index into the input quotes array.'),
+        additionalTags: z
+          .array(z.string())
+          .describe(
+            'Tags from the provided list that apply to this quote. Empty array if none apply.',
+          ),
+      }),
+    )
+    .describe('One entry per input quote.'),
+});
+
+export type QuoteTagClassification = {
+  quoteIndex: number;
+  additionalTags: string[];
+};
+
+export type ClassifyQuotesForTagsRequest = {
+  quotes: string[];
+  /** Candidate tags to check against each quote (do not include the primary tag). */
+  tags: string[];
+  apiKey: string;
+  signal?: AbortSignal;
+};
+
 const PdfLineBreakHyphenDecisionSchema = z.object({
   before: z.string().describe('Text before the hyphen at the line break.'),
   after: z
@@ -111,7 +142,10 @@ export class ClaudeService {
   #apiKey = '';
 
   setApiKey(apiKey: string) {
-    this.#apiKey = apiKey;
+    // Strip any non-ASCII characters (e.g. smart quotes, non-breaking spaces
+    // pasted from a browser) — HTTP headers only allow ISO-8859-1.
+    // eslint-disable-next-line no-control-regex
+    this.#apiKey = apiKey.replace(/[^\x00-\x7F]/g, '').trim();
   }
 
   apiKey(): string {
@@ -273,5 +307,68 @@ Return one decision per input case with matching before/after strings.`,
     }
 
     return parsed.decisions;
+  }
+
+  /**
+   * For each quote, identify which of the candidate tags apply to it.
+   * Used as a second step after the primary AI search to enrich returned
+   * annotations with additional matching tags — without creating new quotes.
+   */
+  async classifyQuotesForOtherTags(
+    request: ClassifyQuotesForTagsRequest,
+  ): Promise<QuoteTagClassification[]> {
+    const { quotes, tags, apiKey, signal } = request;
+    if (!quotes.length || !tags.length) {
+      return [];
+    }
+
+    const client = new Anthropic({
+      apiKey,
+      dangerouslyAllowBrowser: true,
+    });
+
+    const tagList = tags.map(t => `- ${t}`).join('\n');
+    const quoteList = quotes.map((q, i) => `[${i}] "${q}"`).join('\n');
+
+    const startedAt = Date.now();
+    try {
+      const message = await client.messages.parse(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system:
+            'You are a tag classifier for research annotations. Given candidate tags and verbatim quotes from a research paper, identify which tags genuinely apply to each quote. Only assign a tag when the quote clearly belongs to that category. Return one entry per quote index.',
+          messages: [
+            {
+              role: 'user',
+              content: `Candidate tags:\n${tagList}\n\nQuotes:\n${quoteList}\n\nFor each quote index, list which candidate tags apply (empty array if none).`,
+            },
+          ],
+          output_config: {
+            format: zodOutputFormat(QuoteTagClassificationsSchema),
+          },
+        },
+        signal ? { signal } : undefined,
+      );
+
+      return message.parsed_output?.classifications ?? [];
+    } catch (error: unknown) {
+      const aborted =
+        signal?.aborted ||
+        (error instanceof Error && error.name === 'AbortError');
+      if (aborted) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw error;
+        }
+        const abortErr = new Error('Aborted');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      }
+      console.error('[ClaudeService] classifyQuotesForOtherTags error:', {
+        elapsedMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
   }
 }
