@@ -6,8 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Annotation, Group } from '../../../types/api';
 import {
   buildNodeLinkGraph,
+  buildSpotlightGraphLayout,
   buildTagGraphLayout,
   colorForTag,
+  spotlightNodeLinkGraph,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
 import {
@@ -34,6 +36,8 @@ type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type AddMode = 'edge' | 'tag';
 type SidebarView = 'details' | 'edit';
+type ViewportView = 'graph' | 'edges';
+type ManualEdgeSort = 'source' | 'target' | 'relationship';
 type PendingDelete =
   | { type: 'edge'; id: string }
   | { type: 'tag'; id: string }
@@ -463,6 +467,7 @@ function TagNode({
 
 function GraphCanvas({
   graph,
+  spotlightTag,
   selectedTag,
   selectedEdgeId,
   tagColors,
@@ -471,6 +476,7 @@ function GraphCanvas({
   onClearSelection,
 }: {
   graph: NodeLinkGraph;
+  spotlightTag: string;
   selectedTag: string;
   selectedEdgeId: string;
   tagColors: Record<string, string>;
@@ -488,29 +494,42 @@ function GraphCanvas({
   const [nodePositions, setNodePositions] = useState<
     Record<string, GraphPoint>
   >({});
-  const layout = useMemo(
-    () => buildTagGraphLayout(graph, tagColors),
-    [graph, tagColors],
+  const [spotlightNodePositions, setSpotlightNodePositions] = useState<
+    Record<string, GraphPoint>
+  >({});
+  const visibleGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
   );
+  const layout = useMemo(
+    () =>
+      spotlightTag
+        ? buildSpotlightGraphLayout(visibleGraph, spotlightTag, tagColors)
+        : buildTagGraphLayout(visibleGraph, tagColors),
+    [spotlightTag, tagColors, visibleGraph],
+  );
+  const activeNodePositions = spotlightTag
+    ? spotlightNodePositions
+    : nodePositions;
   const layoutNodes = useMemo(
     () =>
       layout.nodes.map(node => {
-        const moved = nodePositions[node.tag];
+        const moved = activeNodePositions[node.tag];
         return moved ? { ...node, x: moved.x, y: moved.y } : node;
       }),
-    [layout.nodes, nodePositions],
+    [activeNodePositions, layout.nodes],
   );
   const nodeByTag = new Map(layoutNodes.map(node => [node.tag, node]));
   const relationshipCountByTag = useMemo(() => {
-    const counts = new Map(graph.tags.map(node => [node.tag, 0]));
-    for (const edge of graph.manualEdges) {
+    const counts = new Map(visibleGraph.tags.map(node => [node.tag, 0]));
+    for (const edge of visibleGraph.manualEdges) {
       counts.set(edge.sourceTag, (counts.get(edge.sourceTag) || 0) + 1);
       counts.set(edge.targetTag, (counts.get(edge.targetTag) || 0) + 1);
     }
     return counts;
-  }, [graph.manualEdges, graph.tags]);
+  }, [visibleGraph.manualEdges, visibleGraph.tags]);
   const selectedEdge = selectedEdgeId
-    ? graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId)
+    ? visibleGraph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId)
     : undefined;
   const relatedTags = new Set<string>();
   if (selectedEdge) {
@@ -518,7 +537,7 @@ function GraphCanvas({
     relatedTags.add(selectedEdge.targetTag);
   } else if (selectedTag) {
     relatedTags.add(selectedTag);
-    for (const edge of graph.manualEdges) {
+    for (const edge of visibleGraph.manualEdges) {
       if (edge.sourceTag === selectedTag) {
         relatedTags.add(edge.targetTag);
       } else if (edge.targetTag === selectedTag) {
@@ -529,7 +548,7 @@ function GraphCanvas({
 
   useEffect(() => {
     setNodePositions(current => {
-      const validTags = new Set(layout.nodes.map(node => node.tag));
+      const validTags = new Set(graph.tags.map(node => node.tag));
       const next = Object.fromEntries(
         Object.entries(current).filter(([tag]) => validTags.has(tag)),
       );
@@ -537,7 +556,12 @@ function GraphCanvas({
         ? current
         : next;
     });
-  }, [layout.nodes]);
+  }, [graph.tags]);
+
+  useEffect(() => {
+    setSpotlightNodePositions({});
+    setUserZoomed(false);
+  }, [spotlightTag]);
 
   useEffect(() => {
     if (userZoomed || !scrollRef.current) {
@@ -546,6 +570,26 @@ function GraphCanvas({
     const availableWidth = Math.max(320, scrollRef.current.clientWidth - 36);
     setZoom(clamp(Math.min(1, availableWidth / layout.width), MIN_ZOOM, 1));
   }, [layout.width, userZoomed]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+    if (!spotlightTag) {
+      container.scrollLeft = 0;
+      container.scrollTop = 0;
+      return;
+    }
+    container.scrollLeft = Math.max(
+      0,
+      (layout.width * zoom - container.clientWidth) / 2,
+    );
+    container.scrollTop = Math.max(
+      0,
+      (layout.height * zoom - container.clientHeight) / 2,
+    );
+  }, [layout.height, layout.width, spotlightTag, zoom]);
 
   const graphPoint = (
     event: Pick<PointerEvent | WheelEvent, 'clientX' | 'clientY'>,
@@ -622,7 +666,10 @@ function GraphCanvas({
       Math.abs(point.x - drag.startX) > 4 ||
       Math.abs(point.y - drag.startY) > 4;
     dragRef.current = { ...drag, moved };
-    setNodePositions(current => ({
+    const setPositions = spotlightTag
+      ? setSpotlightNodePositions
+      : setNodePositions;
+    setPositions(current => ({
       ...current,
       [drag.tag]: {
         x: clamp(
@@ -652,6 +699,15 @@ function GraphCanvas({
     }
   };
 
+  const resetLayout = () => {
+    if (spotlightTag) {
+      setSpotlightNodePositions({});
+    } else {
+      setNodePositions({});
+    }
+    fitZoom();
+  };
+
   return (
     <div className="relative min-h-0 overflow-hidden rounded border bg-[#f7faf9]">
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded border bg-white/95 p-1 shadow-sm">
@@ -670,6 +726,14 @@ function GraphCanvas({
           onClick={fitZoom}
         >
           Fit
+        </button>
+        <button
+          className="h-8 rounded px-2 text-xs font-bold hover:bg-grey-2"
+          type="button"
+          title="Reset node positions and re-layout graph"
+          onClick={resetLayout}
+        >
+          Re-layout
         </button>
         <button
           className="h-8 min-w-8 rounded px-2 text-sm font-bold hover:bg-grey-2"
@@ -733,7 +797,7 @@ function GraphCanvas({
             fill="#f7faf9"
             onClick={onClearSelection}
           />
-          {graph.manualEdges.map((edge, index) => {
+          {visibleGraph.manualEdges.map((edge, index) => {
             const source = nodeByTag.get(edge.sourceTag);
             const target = nodeByTag.get(edge.targetTag);
             if (!source || !target) {
@@ -820,6 +884,175 @@ function GraphCanvas({
         </svg>
       </div>
     </div>
+  );
+}
+
+function edgeTouchesTag(edge: ManualTagEdge, tag: string) {
+  return edge.sourceTag === tag || edge.targetTag === tag;
+}
+
+function compareManualEdges(
+  a: ManualTagEdge,
+  b: ManualTagEdge,
+  sortBy: ManualEdgeSort,
+) {
+  const fields: Array<'sourceTag' | 'targetTag' | 'connectionType'> =
+    sortBy === 'target'
+      ? ['targetTag', 'sourceTag', 'connectionType']
+      : sortBy === 'relationship'
+        ? ['connectionType', 'sourceTag', 'targetTag']
+        : ['sourceTag', 'targetTag', 'connectionType'];
+  for (const field of fields) {
+    const comparison = String(a[field]).localeCompare(String(b[field]));
+    if (comparison) {
+      return comparison;
+    }
+  }
+  return edgeId(a).localeCompare(edgeId(b));
+}
+
+export function ManualEdgeViewport({
+  graph,
+  spotlightTag,
+  selectedTag,
+  selectedEdgeId,
+  tagColors,
+  onSelectEdge,
+}: {
+  graph: NodeLinkGraph;
+  spotlightTag: string;
+  selectedTag: string;
+  selectedEdgeId: string;
+  tagColors: Record<string, string>;
+  onSelectEdge: (edgeId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState<ManualEdgeSort>('source');
+  const visibleGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
+  );
+  const filterOptions = useMemo(
+    () =>
+      [
+        ...visibleGraph.tags.map(tag => tag.tag),
+        ...visibleGraph.manualEdges.map(edge => edge.connectionType),
+      ]
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .sort((a, b) => a.localeCompare(b)),
+    [visibleGraph.manualEdges, visibleGraph.tags],
+  );
+  const edges = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return [...visibleGraph.manualEdges]
+      .filter(edge =>
+        [edge.sourceTag, edge.connectionType, edge.targetTag].some(value =>
+          value.toLocaleLowerCase().includes(normalizedQuery),
+        ),
+      )
+      .sort((a, b) => {
+        if (selectedTag) {
+          const aConnected = edgeTouchesTag(a, selectedTag);
+          const bConnected = edgeTouchesTag(b, selectedTag);
+          if (aConnected !== bConnected) {
+            return aConnected ? -1 : 1;
+          }
+        }
+        return compareManualEdges(a, b, sortBy);
+      });
+  }, [query, selectedTag, sortBy, visibleGraph.manualEdges]);
+
+  useEffect(() => setQuery(''), [spotlightTag]);
+
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded border bg-white">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b bg-grey-1 p-3">
+        <label
+          className="grid min-w-[240px] flex-1 gap-1 text-sm font-medium"
+          htmlFor="manual-edge-viewport-filter"
+        >
+          <span>Filter relationships</span>
+          <SearchableCombobox
+            id="manual-edge-viewport-filter"
+            ariaLabel="Filter manual relationships"
+            options={filterOptions}
+            value={query}
+            allowCustomValue
+            placeholder="Tag or relationship"
+            onChange={setQuery}
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium">
+          <span>Sort by</span>
+          <select
+            className="h-9 rounded border bg-white px-2 text-sm"
+            value={sortBy}
+            aria-label="Sort manual relationships"
+            onChange={event =>
+              setSortBy(
+                (event.target as HTMLSelectElement).value as ManualEdgeSort,
+              )
+            }
+          >
+            <option value="source">Source tag</option>
+            <option value="target">Target tag</option>
+            <option value="relationship">Relationship</option>
+          </select>
+        </label>
+        <span className="pb-2 text-xs font-bold text-grey-6">
+          {edges.length}/{visibleGraph.manualEdges.length}
+        </span>
+      </header>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_minmax(0,1fr)] gap-3 border-b bg-white px-4 py-2 text-xs font-bold uppercase text-grey-6">
+        <span>Source</span>
+        <span>Relationship</span>
+        <span>Target</span>
+      </div>
+
+      {edges.length ? (
+        <ul
+          className="min-h-0 flex-1 divide-y overflow-auto"
+          data-testid="manual-edge-viewport-list"
+        >
+          {edges.map(edge => {
+            const id = edgeId(edge);
+            const connected = !selectedTag || edgeTouchesTag(edge, selectedTag);
+            return (
+              <li key={id} data-edge-id={id}>
+                <button
+                  className={classnames(
+                    'grid w-full grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_minmax(0,1fr)] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-grey-1 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                    {
+                      'bg-brand/10': selectedEdgeId === id,
+                      'opacity-50 hover:opacity-100': !connected,
+                    },
+                  )}
+                  type="button"
+                  aria-pressed={selectedEdgeId === id}
+                  aria-label={`${edge.sourceTag} ${edge.connectionType} ${edge.targetTag}`}
+                  onClick={() => onSelectEdge(id)}
+                >
+                  <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
+                  <strong className="min-w-0 break-words text-sm">
+                    {edge.connectionType}
+                  </strong>
+                  <TagBadge tag={edge.targetTag} tagColors={tagColors} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="grid min-h-0 flex-1 place-items-center p-8 text-sm text-grey-6">
+          {visibleGraph.manualEdges.length
+            ? 'No manual relationships match this filter.'
+            : spotlightTag
+              ? 'This tag has no manual relationships.'
+              : 'No manual relationships have been added yet.'}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1754,6 +1987,8 @@ export function NodeLinkGraphPage({
   const [selectedDocumentUri, setSelectedDocumentUri] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
+  const [spotlightTag, setSpotlightTag] = useState('');
+  const [viewportView, setViewportView] = useState<ViewportView>('graph');
   const [sidebarView, setSidebarView] = useState<SidebarView>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
@@ -1905,6 +2140,10 @@ export function NodeLinkGraphPage({
     () => buildNodeLinkGraph(annotations, semanticState),
     [annotations, semanticState],
   );
+  const spotlightGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
+  );
   const documentOptions = groupGraph.documents;
 
   useEffect(() => {
@@ -1921,6 +2160,12 @@ export function NodeLinkGraphPage({
       setSelectedTag('');
     }
   }, [graph.tags, selectedTag]);
+
+  useEffect(() => {
+    if (spotlightTag && !graph.tags.some(tag => tag.tag === spotlightTag)) {
+      setSpotlightTag('');
+    }
+  }, [graph.tags, spotlightTag]);
 
   useEffect(() => {
     if (
@@ -1963,6 +2208,17 @@ export function NodeLinkGraphPage({
   const clearSelection = () => {
     setSelectedTag('');
     setSelectedEdgeId('');
+  };
+
+  const selectSpotlightTag = (tag: string) => {
+    setSpotlightTag(tag);
+    setSelectedTag(tag);
+    setSelectedEdgeId('');
+  };
+
+  const clearSpotlight = () => {
+    setSpotlightTag('');
+    clearSelection();
   };
 
   const showSidebarView = (view: SidebarView, focusTab = false) => {
@@ -2050,6 +2306,8 @@ export function NodeLinkGraphPage({
                       (event.target as HTMLSelectElement).value,
                     );
                     setSelectedDocumentUri('');
+                    setSpotlightTag('');
+                    clearSelection();
                   }}
                 >
                   {!groups.length && <option value="">No groups loaded</option>}
@@ -2062,17 +2320,17 @@ export function NodeLinkGraphPage({
               </label>
               <label
                 className="grid min-w-0 gap-1 text-sm font-medium"
-                htmlFor="node-link-node-finder"
+                htmlFor="node-link-spotlight"
               >
-                <span>Find node</span>
+                <span>Spotlight neighborhood</span>
                 <SearchableCombobox
-                  id="node-link-node-finder"
-                  ariaLabel="Find node"
+                  id="node-link-spotlight"
+                  ariaLabel="Spotlight a tag neighborhood"
                   options={tagOptions(graph)}
-                  value={selectedTag}
+                  value={spotlightTag}
                   disabled={status === 'loading' || !graph.tags.length}
-                  placeholder="Search tags"
-                  onChange={selectTag}
+                  placeholder="Choose a tag to isolate"
+                  onChange={selectSpotlightTag}
                 />
               </label>
               {/* Document filter disabled — always show all documents in the group.
@@ -2102,11 +2360,56 @@ export function NodeLinkGraphPage({
               </label>
               */}
             </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+              <div
+                className="inline-flex rounded border bg-grey-1 p-0.5"
+                role="group"
+                aria-label="Main viewport"
+              >
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'graph'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'graph'}
+                  onClick={() => setViewportView('graph')}
+                >
+                  Graph
+                </button>
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'edges'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'edges'}
+                  onClick={() => setViewportView('edges')}
+                >
+                  Manual relationships
+                </button>
+              </div>
+              {spotlightTag && (
+                <button
+                  className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={clearSpotlight}
+                >
+                  Clear spotlight
+                </button>
+              )}
+            </div>
             <div className="mt-2 text-sm text-grey-6">
               {status === 'loading'
                 ? 'Loading graph data...'
                 : selectedGroup
-                  ? `${graph.tags.length} tags, ${graph.documents.length} documents, ${graph.manualEdges.length} manual tag-tag edges`
+                  ? spotlightTag
+                    ? `${spotlightGraph.tags.length} of ${graph.tags.length} tags shown around ${spotlightTag}, with ${spotlightGraph.manualEdges.length} direct relationships`
+                    : `${graph.tags.length} tags, ${graph.documents.length} documents, ${graph.manualEdges.length} manual tag-tag edges`
                   : 'Choose a group to load graph data.'}
             </div>
           </section>
@@ -2136,9 +2439,19 @@ export function NodeLinkGraphPage({
               <p className="mb-4 text-sm text-grey-6">{message}</p>
               <Button onClick={() => loadGraph(true)}>Retry</Button>
             </div>
+          ) : viewportView === 'edges' ? (
+            <ManualEdgeViewport
+              graph={graph}
+              spotlightTag={spotlightTag}
+              selectedTag={selectedTag}
+              selectedEdgeId={selectedEdgeId}
+              tagColors={tagColors}
+              onSelectEdge={selectEdge}
+            />
           ) : (
             <GraphCanvas
               graph={graph}
+              spotlightTag={spotlightTag}
               selectedTag={selectedTag}
               selectedEdgeId={selectedEdgeId}
               tagColors={tagColors}

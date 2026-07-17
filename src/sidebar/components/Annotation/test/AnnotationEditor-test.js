@@ -63,6 +63,7 @@ describe('AnnotationEditor', () => {
     };
 
     fakeStore = {
+      allAnnotations: sinon.stub().returns([]),
       createDraft: sinon.stub(),
       getGroup: sinon.stub().returns(fakeGroup),
       setDefault: sinon.stub(),
@@ -138,6 +139,28 @@ describe('AnnotationEditor', () => {
         assert.equal(editor.prop('label'), expectedLabel);
       });
     });
+  });
+
+  it('offers existing tags from annotations in the same group', () => {
+    const annotation = fixtures.defaultAnnotation();
+    fakeStore.allAnnotations.returns([
+      {
+        ...fixtures.defaultAnnotation(),
+        group: annotation.group,
+        tags: ['Theme'],
+      },
+      {
+        ...fixtures.defaultAnnotation(),
+        group: 'another-group',
+        tags: ['Hidden'],
+      },
+    ]);
+
+    const wrapper = createComponent({ annotation });
+
+    assert.deepEqual(wrapper.find('TagEditor').prop('suggestedTags'), [
+      'Theme',
+    ]);
   });
 
   describe('editing tags', () => {

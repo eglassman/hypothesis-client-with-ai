@@ -1,9 +1,11 @@
 import * as fixtures from '../../test/annotation-fixtures';
 import {
   buildNodeLinkGraph,
+  buildSpotlightGraphLayout,
   buildTagGraphLayout,
   colorForTag,
   documentLabelFromUrl,
+  spotlightNodeLinkGraph,
 } from '../graph-model';
 import { emptyNodeLinkState, NODE_LINK_STATE_TAG } from '../graph-state';
 
@@ -197,5 +199,81 @@ describe('node-link graph model', () => {
     assert.isAtMost(setting.x, layout.width - 94);
     assert.isAtLeast(setting.y, 31);
     assert.isAtMost(setting.y, layout.height - 31);
+  });
+
+  it('spotlights only a tag and its directly connected neighborhood', () => {
+    const graph = buildNodeLinkGraph(
+      [
+        annotation({ tags: ['Character'] }),
+        annotation({ id: 'ann-2', tags: ['Action'] }),
+        annotation({ id: 'ann-3', tags: ['Theme'] }),
+        annotation({ id: 'ann-4', tags: ['Setting'] }),
+      ],
+      emptyNodeLinkState({
+        tagEdges: [
+          {
+            id: 'character-action',
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+          {
+            id: 'theme-character',
+            sourceTag: 'Theme',
+            targetTag: 'Character',
+            connectionType: 'shapes',
+          },
+          {
+            id: 'action-setting',
+            sourceTag: 'Action',
+            targetTag: 'Setting',
+            connectionType: 'occurs in',
+          },
+        ],
+      }),
+    );
+
+    const spotlight = spotlightNodeLinkGraph(graph, 'Character');
+
+    assert.sameMembers(
+      spotlight.tags.map(tag => tag.tag),
+      ['Character', 'Action', 'Theme'],
+    );
+    assert.deepEqual(
+      spotlight.manualEdges.map(edge => edge.id),
+      ['character-action', 'theme-character'],
+    );
+  });
+
+  it('centers the spotlight tag between incoming and outgoing neighbors', () => {
+    const graph = buildNodeLinkGraph(
+      [
+        annotation({ tags: ['Character'] }),
+        annotation({ id: 'ann-2', tags: ['Action'] }),
+        annotation({ id: 'ann-3', tags: ['Theme'] }),
+      ],
+      emptyNodeLinkState({
+        tagEdges: [
+          {
+            sourceTag: 'Theme',
+            targetTag: 'Character',
+            connectionType: 'shapes',
+          },
+          {
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+        ],
+      }),
+    );
+    const spotlight = spotlightNodeLinkGraph(graph, 'Character');
+    const layout = buildSpotlightGraphLayout(spotlight, 'Character');
+    const byTag = new Map(layout.nodes.map(node => [node.tag, node]));
+
+    assert.equal(byTag.get('Character').x, layout.width / 2);
+    assert.equal(byTag.get('Character').y, layout.height / 2);
+    assert.isBelow(byTag.get('Theme').x, byTag.get('Character').x);
+    assert.isAbove(byTag.get('Action').x, byTag.get('Character').x);
   });
 });

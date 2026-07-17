@@ -239,6 +239,119 @@ export function colorForTag(
   );
 }
 
+/** Return the selected tag, its immediate neighbors and their connecting edges. */
+export function spotlightNodeLinkGraph(
+  graph: NodeLinkGraph,
+  spotlightTag: string,
+): NodeLinkGraph {
+  if (!spotlightTag || !graph.tags.some(tag => tag.tag === spotlightTag)) {
+    return graph;
+  }
+
+  const manualEdges = graph.manualEdges.filter(
+    edge => edge.sourceTag === spotlightTag || edge.targetTag === spotlightTag,
+  );
+  const visibleTags = new Set([spotlightTag]);
+  for (const edge of manualEdges) {
+    visibleTags.add(edge.sourceTag);
+    visibleTags.add(edge.targetTag);
+  }
+  const tags = graph.tags.filter(tag => visibleTags.has(tag.tag));
+  const documentUris = new Set(tags.flatMap(tag => tag.documentUris));
+
+  return {
+    ...graph,
+    tags,
+    manualEdges,
+    quotes: graph.quotes.filter(quote =>
+      quote.tags.some(tag => visibleTags.has(tag)),
+    ),
+    documents: graph.documents.filter(document =>
+      documentUris.has(document.uri),
+    ),
+  };
+}
+
+/** Arrange a one-hop neighborhood with the selected tag fixed at the center. */
+export function buildSpotlightGraphLayout(
+  graph: NodeLinkGraph,
+  spotlightTag: string,
+  tagColors: Record<string, string> = {},
+): TagGraphLayout {
+  const focusNode = graph.tags.find(tag => tag.tag === spotlightTag);
+  if (!focusNode) {
+    return buildTagGraphLayout(graph, tagColors);
+  }
+
+  const outgoingTags = new Set(
+    graph.manualEdges
+      .filter(
+        edge =>
+          edge.sourceTag === spotlightTag && edge.targetTag !== spotlightTag,
+      )
+      .map(edge => edge.targetTag),
+  );
+  const incomingTags = new Set(
+    graph.manualEdges
+      .filter(
+        edge =>
+          edge.targetTag === spotlightTag &&
+          edge.sourceTag !== spotlightTag &&
+          !outgoingTags.has(edge.sourceTag),
+      )
+      .map(edge => edge.sourceTag),
+  );
+  const remainingTags = graph.tags
+    .map(tag => tag.tag)
+    .filter(
+      tag =>
+        tag !== spotlightTag &&
+        !outgoingTags.has(tag) &&
+        !incomingTags.has(tag),
+    );
+  for (const tag of remainingTags) {
+    outgoingTags.add(tag);
+  }
+
+  const leftTags = [...incomingTags].sort((a, b) => a.localeCompare(b));
+  const rightTags = [...outgoingTags].sort((a, b) => a.localeCompare(b));
+  const maxRows = Math.max(leftTags.length, rightTags.length, 1);
+  const width = 1040;
+  const height = Math.max(620, (maxRows - 1) * TAG_LAYOUT_ROW_GAP + 200);
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const tagByName = new Map(graph.tags.map(tag => [tag.tag, tag]));
+  const nodes: TagLayoutNode[] = [
+    {
+      ...focusNode,
+      x: centerX,
+      y: centerY,
+      color: colorForTag(focusNode.tag, tagColors),
+    },
+  ];
+
+  const addSide = (tags: string[], x: number) => {
+    const firstY = centerY - ((tags.length - 1) * TAG_LAYOUT_ROW_GAP) / 2;
+    tags.forEach((tag, index) => {
+      const tagNode = tagByName.get(tag);
+      if (!tagNode) {
+        return;
+      }
+      nodes.push({
+        ...tagNode,
+        x,
+        y: Math.round(firstY + index * TAG_LAYOUT_ROW_GAP),
+        color: colorForTag(tag, tagColors),
+      });
+    });
+  };
+
+  addSide(leftTags, 190);
+  addSide(rightTags, width - 190);
+
+  return { width, height, nodes };
+}
+
 /**
  * Arrange tag nodes from left to right using manual tag-tag edges as the
  * directed structure, while keeping unlinked tags visible in a separate grid.
