@@ -12,11 +12,9 @@ describe('FilterControls', () => {
   beforeEach(() => {
     fakeStore = {
       clearSelection: sinon.stub(),
-      filterQuery: sinon.stub().returns(null),
       getFocusActive: sinon.stub().returns(new Set()),
       getFocusFilters: sinon.stub().returns({}),
-      selectedAnnotations: sinon.stub().returns([]),
-      setFilterQuery: sinon.stub(),
+      selectedAnnotations: sinon.stub().returns(0),
       toggleFocusMode: sinon.stub(),
     };
 
@@ -141,26 +139,6 @@ describe('FilterControls', () => {
       wrapper.setProps({});
       toggle.update();
     });
-  });
-
-  it('displays filter-query toggle when a sidebar filter query is set', () => {
-    fakeStore.filterQuery.returns('tag:foo');
-    const wrapper = createComponent();
-    const toggle = new ToggleButtonWrapper(wrapper, 'filter-query-toggle');
-    assert.isTrue(toggle.exists());
-    assert.include(toggle.label(), 'tag:foo');
-
-    toggle.click();
-    assert.calledOnce(fakeStore.setFilterQuery);
-    assert.calledWith(fakeStore.setFilterQuery, null);
-  });
-
-  it('disables filter-query toggle if there is a selection', () => {
-    fakeStore.filterQuery.returns('tag:foo');
-    fakeStore.selectedAnnotations.returns([{ id: 'x' }]);
-    const wrapper = createComponent();
-    const toggle = new ToggleButtonWrapper(wrapper, 'filter-query-toggle');
-    assert.isTrue(toggle.disabled());
   });
 
   it('disables focus filter controls if there is a selection', () => {

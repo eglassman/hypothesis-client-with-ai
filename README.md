@@ -1,7 +1,5 @@
-Hypothesis client --- with AI suggestions
+Hypothesis client
 =================
-
-The following README is almost entirely the README of the open source Hypothesis client our code extends. The extensions, as well as updates to the links below, will be added shortly.
 
 [![npm version](https://img.shields.io/npm/v/hypothesis.svg)][npm]
 [![BSD licensed](https://img.shields.io/badge/license-BSD-blue.svg)][license]
@@ -55,51 +53,3 @@ license information can be found in the included [LICENSE][license] file.
 
 [bsd2c]: http://www.opensource.org/licenses/BSD-2-Clause
 [license]: https://github.com/hypothesis/client/blob/main/LICENSE
-
-Building for the browser extension
-----------------------------------
-
-This client is bundled into the AI browser extension via a `portal:` dependency.
-Clone both repos side by side:
-
-```
-some-folder/
-  hypothesis-client-with-ai/               # this repo
-  hypothesis-browser-extension-with-AI/
-```
-
-The extension's `package.json` should include:
-
-```json
-"hypothesis": "portal:../hypothesis-client-with-ai"
-```
-
-Install dependencies once per repo (`yarn install` in each), then build:
-
-```bash
-cd hypothesis-client-with-ai
-make build
-
-cd ../hypothesis-browser-extension-with-AI
-make build SETTINGS_FILE=settings/chrome-prod.json
-```
-
-Use `settings/chrome-prod.json` for the production Hypothesis service. If you
-omit `SETTINGS_FILE`, the extension Makefile defaults to `chrome-dev.json`
-(`localhost`) and login will fail.
-
-Load the unpacked extension from `hypothesis-browser-extension-with-AI/build/`
-in `chrome://extensions/` (Developer mode → Load unpacked). After code changes,
-re-run both build steps and refresh the extension card.
-
-Tag inventory and experiment-log data persist in page `localStorage`
-(`hypothesis.tagInventory.rows`, `hypothesis.aiSearch.experimentLog`). Inspect
-exported logs with:
-
-```bash
-python scripts/inspect-experiment-log.py experiment-log-2026-03-27.json
-```
-
-# Todo's
-- make sure clear error message pops up if API key is missing onSearch in AISearchPanel
-- make sure to show user-friendly versions of console.log messages in UI

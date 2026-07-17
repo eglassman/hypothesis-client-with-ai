@@ -10,7 +10,6 @@ import { isReply } from '../helpers/annotation-metadata';
 import { combineGroups, PUBLIC_GROUP_ID } from '../helpers/groups';
 import type { SidebarStore } from '../store';
 import { awaitStateChange } from '../store/util';
-import { contentFrameUri } from '../helpers/document-uri';
 import { watch } from '../util/watch';
 import type { APIService } from './api';
 import type { AuthService } from './auth';
@@ -92,7 +91,7 @@ export class GroupsService {
    * the site that the user is on.
    */
   private _mainURI(): string | null {
-    return contentFrameUri(this._store);
+    return this._store.defaultContentFrame()?.uri ?? null;
   }
 
   /**

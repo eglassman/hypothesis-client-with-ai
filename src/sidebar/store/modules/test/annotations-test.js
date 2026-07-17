@@ -45,26 +45,6 @@ describe('sidebar/store/modules/annotations', () => {
       ]);
     });
 
-    it('sets moderation_status to PENDING when tags include ai-pending', () => {
-      const annot = {
-        ...fixtures.defaultAnnotation(),
-        tags: ['ai-pending', 'schema'],
-      };
-      store.addAnnotations([annot]);
-      const stored = store.getState().annotations.annotations[0];
-      assert.equal(stored.moderation_status, 'PENDING');
-    });
-
-    it('merges duplicate annotation ids in the same batch', () => {
-      const annot = fixtures.defaultAnnotation();
-      store.addAnnotations([
-        { ...annot, text: 'first' },
-        { ...annot, text: 'last' },
-      ]);
-      assert.equal(store.getState().annotations.annotations.length, 1);
-      assert.equal(store.findAnnotationByID(annot.id).text, 'last');
-    });
-
     it('assigns a $tag to annotations', () => {
       const annotA = Object.assign(fixtures.defaultAnnotation(), { id: 'a1' });
       const annotB = Object.assign(fixtures.defaultAnnotation(), { id: 'a2' });
@@ -288,63 +268,6 @@ describe('sidebar/store/modules/annotations', () => {
         Object.assign(fixtures.defaultAnnotation(), { $orphan: false }),
       ]);
       assert.isFalse(store.isWaitingToAnchorAnnotations());
-    });
-  });
-
-  describe('#isWaitingForLocationEnrichment', () => {
-    it('returns true when quote-only annotations lack location', () => {
-      const store = createTestStore();
-      store.addAnnotations([
-        Object.assign(fixtures.defaultAnnotation(), {
-          $orphan: false,
-          target: [
-            {
-              source: 'https://example.com',
-              selector: [{ type: 'TextQuoteSelector', exact: 'text' }],
-            },
-          ],
-        }),
-      ]);
-      assert.isTrue(store.isWaitingForLocationEnrichment());
-    });
-
-    it('returns false when all annotatable annotations have location', () => {
-      const store = createTestStore();
-      store.addAnnotations([
-        Object.assign(fixtures.defaultAnnotation(), {
-          $orphan: false,
-          target: [
-            {
-              source: 'https://example.com',
-              selector: [
-                { type: 'TextQuoteSelector', exact: 'text' },
-                { type: 'TextPositionSelector', start: 0, end: 4 },
-              ],
-            },
-          ],
-        }),
-      ]);
-      assert.isFalse(store.isWaitingForLocationEnrichment());
-    });
-
-    it('clears pending state when location enrichment times out', () => {
-      const ann = Object.assign(fixtures.defaultAnnotation(), {
-        $tag: 't1',
-        $orphan: false,
-        target: [
-          {
-            source: 'https://example.com',
-            selector: [{ type: 'TextQuoteSelector', exact: 'text' }],
-          },
-        ],
-      });
-      const store = createTestStore();
-      store.addAnnotations([ann]);
-      assert.isTrue(store.isWaitingForLocationEnrichment());
-
-      store.updateLocationEnrichmentTimeout(['t1']);
-      assert.isFalse(store.isWaitingForLocationEnrichment());
-      assert.isTrue(store.allAnnotations()[0].$locationTimeout);
     });
   });
 

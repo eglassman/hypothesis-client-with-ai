@@ -67,49 +67,6 @@ export function isWaitingToAnchor(annotation: Annotation): boolean {
 }
 
 /**
- * Return true if the annotation has enough location metadata to sort by
- * document position.
- */
-export function hasSortableLocation(annotation: Annotation): boolean {
-  const loc = location(annotation);
-  return (
-    loc.cfi !== undefined ||
-    loc.charOffset !== undefined ||
-    loc.pageIndex !== undefined ||
-    loc.top !== undefined
-  );
-}
-
-/**
- * Return true if this annotation needs a document location for location-based
- * sorting in the sidebar.
- */
-export function needsLocationForSort(annotation: Annotation): boolean {
-  return (
-    hasSelector(annotation) &&
-    !isPageNote(annotation) &&
-    !isReply(annotation)
-  );
-}
-
-/**
- * Return true if a saved annotatable annotation is still waiting for location
- * selectors to be derived (e.g. quote-only AI annotations before enrichment).
- */
-export function isPendingLocationEnrichment(annotation: Annotation): boolean {
-  if (!needsLocationForSort(annotation)) {
-    return false;
-  }
-  if (isOrphan(annotation) || annotation.$anchorTimeout) {
-    return false;
-  }
-  if (annotation.$locationTimeout) {
-    return false;
-  }
-  return !hasSortableLocation(annotation);
-}
-
-/**
  * Is this annotation a highlight?
  *
  * Highlights are generally identifiable by having no text content AND no tags,
@@ -297,7 +254,7 @@ export function quote(annotation: APIAnnotationData): string | null {
   const quoteSel = target.selector.find(s => s.type === 'TextQuoteSelector') as
     | TextQuoteSelector
     | undefined;
-  return quoteSel ? (quoteSel.displayExact ?? quoteSel.exact) : null;
+  return quoteSel ? quoteSel.exact : null;
 }
 
 /** Return the description of the annotation's selection. */

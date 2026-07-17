@@ -227,7 +227,6 @@ describe('TopBar', () => {
       assert.equal(wrapper.exists('GroupList'), isSidebar);
       assert.equal(wrapper.exists('SortMenu'), isSidebar);
       assert.equal(wrapper.exists('SearchIconButton'), isSidebar);
-      assert.equal(wrapper.exists('TagLegendIconButton'), isSidebar);
       assert.equal(
         wrapper.exists('button[data-testid="share-icon-button"]'),
         isSidebar,

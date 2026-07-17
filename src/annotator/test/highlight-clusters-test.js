@@ -78,23 +78,23 @@ describe('HighlightClusterController', () => {
     );
   });
 
-  it('keeps the feature inactive when the feature flag is set', async () => {
+  it('activates the feature when the feature flag is set', async () => {
     createToolbar();
     fakeFeatures.update({ styled_highlight_clusters: true });
 
     await waitFor(() => {
       return (
-        !container.classList.contains('hypothesis-highlights-clustered') &&
-        toolbarProps.active === false
+        container.classList.contains('hypothesis-highlights-clustered') &&
+        toolbarProps.active === true
       );
     });
   });
 
-  it('keeps the feature inactive when the feature flag toggles', async () => {
+  it('deactivates the feature when the feature flag is unset', async () => {
     fakeFeatures.update({ styled_highlight_clusters: true });
     createToolbar();
 
-    assert.isFalse(
+    assert.isTrue(
       container.classList.contains('hypothesis-highlights-clustered'),
     );
 
@@ -142,7 +142,7 @@ describe('HighlightClusterController', () => {
       clock.restore();
     });
 
-    it('does not update highlights while cluster mode is forced off', () => {
+    it('schedules a debounced task to update highlights', () => {
       const controller = createToolbar();
       controller.scheduleClusterUpdates();
 
@@ -157,7 +157,7 @@ describe('HighlightClusterController', () => {
 
       clock.tick(150);
 
-      assert.notCalled(fakeUpdateClusters);
+      assert.calledOnce(fakeUpdateClusters);
     });
   });
 });

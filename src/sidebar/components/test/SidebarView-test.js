@@ -246,7 +246,7 @@ describe('SidebarView', () => {
         showControls: false,
       },
     ].forEach(({ searchPanelOpen, showControls }) => {
-      it(`renders FilterControls when search panel open=${searchPanelOpen}`, () => {
+      it(`renders filter controls when search panel is not open`, () => {
         fakeStore.isSidebarPanelOpen
           .withArgs('searchAnnotations')
           .returns(searchPanelOpen);

@@ -185,34 +185,6 @@ describe('AnnotationEditor', () => {
       assert.equal(fakeTagsService.store.callCount, 0);
       assert.equal(fakeStore.createDraft.callCount, 0);
     });
-
-    it('marks tag as negative example in draft when callback invoked', () => {
-      const draft = fixtures.defaultDraft();
-      draft.tags = ['methods', 'other'];
-
-      const wrapper = createComponent({ draft });
-      wrapper.find('TagEditor').props().onMarkNegativeExample('methods');
-
-      const draftCall = fakeStore.createDraft.getCall(0);
-      assert.deepEqual(draftCall.args[1].tags, [
-        'other',
-        'methods-neg-example',
-      ]);
-    });
-
-    it('reverts negative example tag in draft when callback invoked', () => {
-      const draft = fixtures.defaultDraft();
-      draft.tags = ['methods-neg-example'];
-
-      const wrapper = createComponent({ draft });
-      wrapper
-        .find('TagEditor')
-        .props()
-        .onRevertNegativeExample('methods-neg-example');
-
-      const draftCall = fakeStore.createDraft.getCall(0);
-      assert.deepEqual(draftCall.args[1].tags, ['methods']);
-    });
   });
 
   describe('editing target descriptions', () => {

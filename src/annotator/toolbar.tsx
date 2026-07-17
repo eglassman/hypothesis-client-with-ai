@@ -9,7 +9,6 @@ export type ToolbarOptions = {
   createAnnotation: (tool: AnnotationTool | null) => void;
   setSidebarOpen: (open: boolean) => void;
   setHighlightsVisible: (visible: boolean) => void;
-  setFullWidth?: (fullWidth: boolean) => void;
   sidebarContainerId?: string;
 };
 
@@ -28,11 +27,9 @@ export class ToolbarController {
   private _highlightsVisible: boolean;
   private _sidebarOpen: boolean;
   private _sidebarContainerId?: string;
-  private _fullWidth: boolean;
   private _closeSidebar: () => void;
   private _toggleSidebar: () => void;
   private _toggleHighlights: () => void;
-  private _toggleFullWidth: (() => void) | undefined;
   private _createAnnotation: (tool: AnnotationTool | null) => void;
   private _sidebarToggleButton: RefObject<HTMLButtonElement>;
   private _supportedAnnotationTools: AnnotationTool[];
@@ -46,14 +43,13 @@ export class ToolbarController {
    * @param container - Element into which the toolbar is rendered
    */
   constructor(container: HTMLElement, options: ToolbarOptions) {
-    const { createAnnotation, setSidebarOpen, setHighlightsVisible, setFullWidth } = options;
+    const { createAnnotation, setSidebarOpen, setHighlightsVisible } = options;
 
     this.container = container;
     this._activeTool = null;
     this._useMinimalControls = false;
     this._newAnnotationType = 'note';
     this._highlightsVisible = false;
-    this._fullWidth = false;
     this._sidebarOpen = false;
     this._sidebarContainerId = options.sidebarContainerId;
     this._supportedAnnotationTools = ['selection'];
@@ -64,13 +60,6 @@ export class ToolbarController {
     this._toggleSidebar = () => setSidebarOpen(!this._sidebarOpen);
     this._toggleHighlights = () =>
       setHighlightsVisible(!this._highlightsVisible);
-    this._toggleFullWidth = setFullWidth
-      ? () => {
-          this._fullWidth = !this._fullWidth;
-          setFullWidth(this._fullWidth);
-          this.render();
-        }
-      : undefined;
     this._createAnnotation = (tool: AnnotationTool | null) => {
       createAnnotation(tool);
 
@@ -142,15 +131,6 @@ export class ToolbarController {
 
   get newAnnotationType() {
     return this._newAnnotationType;
-  }
-
-  set fullWidth(value: boolean) {
-    this._fullWidth = value;
-    this.render();
-  }
-
-  get fullWidth() {
-    return this._fullWidth;
   }
 
   /**
@@ -227,12 +207,10 @@ export class ToolbarController {
         createAnnotation={this._createAnnotation}
         newAnnotationType={this._newAnnotationType}
         isSidebarOpen={this._sidebarOpen}
-        isFullWidth={this._fullWidth}
         sidebarContainerId={this._sidebarContainerId}
         showHighlights={this._highlightsVisible}
         supportedTools={this._supportedAnnotationTools}
         toggleHighlights={this._toggleHighlights}
-        toggleFullWidth={this._toggleFullWidth}
         toggleSidebar={this._toggleSidebar}
         toggleSidebarRef={this._sidebarToggleButton}
         useMinimalControls={this.useMinimalControls}

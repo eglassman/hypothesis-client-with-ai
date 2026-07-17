@@ -2,7 +2,6 @@ import { createStoreModule, makeAction } from '../create-store';
 
 export type RouteName =
   | 'annotation'
-  | 'nodeLink'
   | 'notebook'
   | 'profile'
   | 'sidebar'

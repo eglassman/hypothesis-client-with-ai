@@ -395,48 +395,6 @@ describe('TagEditor', () => {
       });
     });
 
-    describe('tag example toggles', () => {
-      it('passes mark-negative callback for convertible positive tags', () => {
-        const onMarkNegativeExample = sinon.stub();
-        const wrapper = createComponent({
-          tagList: ['methods', 'ai-user-approved'],
-          onMarkNegativeExample,
-        });
-        const tagListItems = wrapper.find('TagListItem');
-
-        assert.equal(
-          tagListItems.at(0).props().onMarkNegativeExample,
-          onMarkNegativeExample,
-        );
-        assert.isUndefined(tagListItems.at(1).props().onMarkNegativeExample);
-      });
-
-      it('passes revert callback for negative schema tags', () => {
-        const onRevertNegativeExample = sinon.stub();
-        const wrapper = createComponent({
-          tagList: ['methods-neg-example'],
-          onRevertNegativeExample,
-        });
-        const tagItem = wrapper.find('TagListItem').first();
-
-        assert.equal(
-          tagItem.props().onRevertNegativeExample,
-          onRevertNegativeExample,
-        );
-      });
-
-      it('does not pass mark-negative when ai-pending is present', () => {
-        const onMarkNegativeExample = sinon.stub();
-        const wrapper = createComponent({
-          tagList: ['ai-pending', 'methods'],
-          onMarkNegativeExample,
-        });
-        const methodsItem = wrapper.find('TagListItem').at(1);
-
-        assert.isUndefined(methodsItem.props().onMarkNegativeExample);
-      });
-    });
-
     describe('navigating suggestions via keyboard', () => {
       it('should set the initial `activeItem` value to -1 when opening suggestions', () => {
         const wrapper = createComponent();

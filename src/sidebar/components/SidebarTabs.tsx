@@ -3,24 +3,21 @@ import {
   Button,
   Card,
   CardContent,
-  GlobeIcon,
   LinkButton,
   PlusIcon,
 } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import type { ComponentChildren } from 'preact';
-import { useCallback, useEffect } from 'preact/hooks';
+import { useCallback } from 'preact/hooks';
 
 import { pluralize } from '../../shared/pluralize';
 import type { SidebarSettings } from '../../types/config';
 import type { TabName } from '../../types/sidebar';
 import { applyTheme } from '../helpers/theme';
-import { isPendingLocationEnrichment } from '../helpers/annotation-metadata';
 import { withServices } from '../service-context';
 import type { AnnotationsService } from '../services/annotations';
 import type { FrameSyncService } from '../services/frame-sync';
 import { useSidebarStore } from '../store';
-import GroupAnnotationsTab from './GroupAnnotationsTab';
 import ThreadList from './ThreadList';
 import { useRootThread } from './hooks/use-root-thread';
 
@@ -122,73 +119,15 @@ function SidebarTabs({
   const annotationCount = tabCounts.annotation;
   const orphanCount = tabCounts.orphan;
   const isWaitingToAnchorAnnotations = store.isWaitingToAnchorAnnotations();
-  const isWaitingForLocationEnrichment = store.isWaitingForLocationEnrichment();
-  const isAnnotationFetchComplete = store.isAnnotationFetchComplete();
-  const initialLoadLocationReady = store.initialLoadLocationReady();
-
-  const isInitialLocationGateActive =
-    !initialLoadLocationReady &&
-    (!isAnnotationFetchComplete || isWaitingForLocationEnrichment);
-
-  const tabListWaiting =
-    isWaitingToAnchorAnnotations || isInitialLocationGateActive;
-
-  useEffect(() => {
-    if (initialLoadLocationReady) {
-      return;
-    }
-    if (isAnnotationFetchComplete && !isWaitingForLocationEnrichment) {
-      store.setInitialLoadLocationReady();
-    }
-  }, [
-    initialLoadLocationReady,
-    isAnnotationFetchComplete,
-    isWaitingForLocationEnrichment,
-    store,
-  ]);
-
-  useEffect(() => {
-    if (!isAnnotationFetchComplete || initialLoadLocationReady) {
-      return;
-    }
-
-    const LOCATION_ENRICHMENT_TIMEOUT = 3000;
-    const timeoutId = window.setTimeout(() => {
-      const pendingTags = store
-        .allAnnotations()
-        .filter(isPendingLocationEnrichment)
-        .map(ann => ann.$tag);
-      if (pendingTags.length > 0) {
-        store.updateLocationEnrichmentTimeout(pendingTags);
-      }
-    }, LOCATION_ENRICHMENT_TIMEOUT);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-    // Do not depend on `isWaitingForLocationEnrichment`: each enrichment tick
-    // would reset this timer and leave the loading gate stuck indefinitely.
-  }, [initialLoadLocationReady, isAnnotationFetchComplete, store]);
 
   const selectTab = (tabId: TabName) => {
     store.selectTab(tabId);
   };
 
-  const isAISearchOpen = store.isSidebarPanelOpen('aiSearchAnnotations');
-  const isGroupTabOpen = store.isSidebarPanelOpen('emptyPanel');
-  const isAIOrEmptyPanelOpen = isAISearchOpen || isGroupTabOpen;
-
   const showAnnotationsUnavailableMessage =
     selectedTab === 'annotation' &&
     annotationCount === 0 &&
-    !isWaitingToAnchorAnnotations &&
-    !isAIOrEmptyPanelOpen &&
-    !isWaitingForLocationEnrichment;
-
-  const showLocationLoadingGate =
-    selectedTab === 'annotation' &&
-    !settings.commentsMode &&
-    isInitialLocationGateActive;
+    !isWaitingToAnchorAnnotations;
 
   const showNotesUnavailableMessage = selectedTab === 'note' && noteCount === 0;
 
@@ -223,139 +162,92 @@ function SidebarTabs({
           'space-y-3 pb-[9px]',
         )}
       >
-          {!isGroupTabOpen && <div className="flex gap-x-6 theme-clean:ml-[15px] mt-1" role="tablist">
-            {!settings.commentsMode && (
-              <Tab
-                count={annotationCount}
-                isWaitingToAnchor={isWaitingToAnchorAnnotations}
-                isSelected={!isGroupTabOpen && selectedTab === 'annotation'}
-                label="Annotations"
-                name="annotation"
-                onSelect={() => {
-                  store.closeSidebarPanel('emptyPanel');
-                  selectTab('annotation');
-                }}
-              >
-                Annotations
-              </Tab>
-            )}
+        <div className="flex gap-x-6 theme-clean:ml-[15px] mt-1" role="tablist">
+          {!settings.commentsMode && (
             <Tab
-              count={noteCount}
+              count={annotationCount}
               isWaitingToAnchor={isWaitingToAnchorAnnotations}
-              isSelected={!isGroupTabOpen && selectedTab === 'note'}
-              label={settings.commentsMode ? 'Comments' : 'Page notes'}
-              name="note"
-              onSelect={() => {
-                store.closeSidebarPanel('emptyPanel');
-                selectTab('note');
-              }}
+              isSelected={selectedTab === 'annotation'}
+              label="Annotations"
+              name="annotation"
+              onSelect={() => selectTab('annotation')}
             >
-              {settings.commentsMode ? 'Comments' : 'Page Notes'}
+              Annotations
             </Tab>
-            {orphanCount > 0 && (
-              <Tab
-                count={orphanCount}
-                isWaitingToAnchor={isWaitingToAnchorAnnotations}
-                isSelected={!isGroupTabOpen && selectedTab === 'orphan'}
-                label="Unanchored"
-                name="orphan"
-                onSelect={() => {
-                  store.closeSidebarPanel('emptyPanel');
-                  selectTab('orphan');
-                }}
-              >
-                Unanchored
-              </Tab>
-            )}
-            <LinkButton
-              classes={classnames('bg-transparent min-w-[5.25rem]', {
-                'font-bold': isGroupTabOpen,
-              })}
-              variant="text"
-              onClick={() => store.toggleSidebarPanel('emptyPanel')}
-              onMouseDown={() => store.toggleSidebarPanel('emptyPanel')}
-              pressed={isGroupTabOpen}
-              role="tab"
-              tabIndex={0}
-              title="Abstract Explorer"
-              underline="none"
+          )}
+          <Tab
+            count={noteCount}
+            isWaitingToAnchor={isWaitingToAnchorAnnotations}
+            isSelected={selectedTab === 'note'}
+            label={settings.commentsMode ? 'Comments' : 'Page notes'}
+            name="note"
+            onSelect={() => selectTab('note')}
+          >
+            {settings.commentsMode ? 'Comments' : 'Page Notes'}
+          </Tab>
+          {orphanCount > 0 && (
+            <Tab
+              count={orphanCount}
+              isWaitingToAnchor={isWaitingToAnchorAnnotations}
+              isSelected={selectedTab === 'orphan'}
+              label="Unanchored"
+              name="orphan"
+              onSelect={() => selectTab('orphan')}
             >
-              <GlobeIcon className="w-em h-em inline mr-1" />
-              Abstract Explorer
-            </LinkButton>
-          </div>}
-          {isGroupTabOpen ? (
-            <div
-              className="space-y-3 overflow-y-auto"
-              role="tabpanel"
-              aria-label="Group annotations"
-            >
-              <GroupAnnotationsTab />
-            </div>
-          ) : (
-            <div
-              className="space-y-3"
-              role="tabpanel"
-              id={idForPanel(selectedTab)}
-              aria-labelledby={idForTab(selectedTab)}
-            >
-              {selectedTab === 'note' &&
-                settings.enableExperimentalNewNoteButton && (
-                  <div className="flex justify-end">
-                    <Button
-                      data-testid="new-note-button"
-                      onClick={createPageNoteWithDocumentMeta}
-                      variant="primary"
-                      style={applyTheme(['ctaBackgroundColor'], settings)}
-                    >
-                      <PlusIcon />
-                      {settings.commentsMode ? 'Add comment' : 'New note'}
-                    </Button>
-                  </div>
-                )}
-              {!isLoading && showNotesUnavailableMessage && (
-                <Card data-testid="notes-unavailable-message" variant="flat">
-                  <CardContent classes="text-center">
-                    There are no{' '}
-                    {settings.commentsMode ? 'comments' : 'page notes'} in this
-                    group.
-                  </CardContent>
-                </Card>
-              )}
-              {!isLoading && showAnnotationsUnavailableMessage && (
-                <Card
-                  data-testid="annotations-unavailable-message"
-                  variant="flat"
-                >
-                  <CardContent
-                    // TODO: Remove !important spacing class after
-                    // https://github.com/hypothesis/frontend-shared/issues/676 is addressed
-                    classes="text-center !space-y-1"
-                  >
-                    <p>There are no annotations in this group.</p>
-                    <p>
-                      Create one by selecting some text and clicking the{' '}
-                      <AnnotateIcon
-                        className="w-em h-em inline m-0.5 -mt-0.5"
-                        title="Annotate"
-                      />{' '}
-                      button.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-              {showLocationLoadingGate ? (
-                <Card data-testid="location-enrichment-loading" variant="flat">
-                  <CardContent classes="text-center">
-                    Determining annotation locations…
-                  </CardContent>
-                </Card>
-              ) : (
-                <ThreadList threads={rootThread.children} />
-              )}
-            </div>
+              Unanchored
+            </Tab>
           )}
         </div>
+        <div
+          className="space-y-3"
+          role="tabpanel"
+          id={idForPanel(selectedTab)}
+          aria-labelledby={idForTab(selectedTab)}
+        >
+          {selectedTab === 'note' &&
+            settings.enableExperimentalNewNoteButton && (
+              <div className="flex justify-end">
+                <Button
+                  data-testid="new-note-button"
+                  onClick={createPageNoteWithDocumentMeta}
+                  variant="primary"
+                  style={applyTheme(['ctaBackgroundColor'], settings)}
+                >
+                  <PlusIcon />
+                  {settings.commentsMode ? 'Add comment' : 'New note'}
+                </Button>
+              </div>
+            )}
+          {!isLoading && showNotesUnavailableMessage && (
+            <Card data-testid="notes-unavailable-message" variant="flat">
+              <CardContent classes="text-center">
+                There are no {settings.commentsMode ? 'comments' : 'page notes'}{' '}
+                in this group.
+              </CardContent>
+            </Card>
+          )}
+          {!isLoading && showAnnotationsUnavailableMessage && (
+            <Card data-testid="annotations-unavailable-message" variant="flat">
+              <CardContent
+                // TODO: Remove !important spacing class after
+                // https://github.com/hypothesis/frontend-shared/issues/676 is addressed
+                classes="text-center !space-y-1"
+              >
+                <p>There are no annotations in this group.</p>
+                <p>
+                  Create one by selecting some text and clicking the{' '}
+                  <AnnotateIcon
+                    className="w-em h-em inline m-0.5 -mt-0.5"
+                    title="Annotate"
+                  />{' '}
+                  button.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+          <ThreadList threads={rootThread.children} />
+        </div>
+      </div>
     </>
   );
 }

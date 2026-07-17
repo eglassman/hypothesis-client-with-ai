@@ -21,18 +21,14 @@ import type {
   DocumentInfo,
   RenderToBitmapOptions,
 } from '../../types/annotator';
-import type { Annotation, Selector, TextQuoteSelector } from '../../types/api';
-import { mapHiddenAnnotationIdsToGuestTags } from '../helpers/hidden-annotation-guest-tags';
-import {
+import type { Annotation } from '../../types/api';
+import type {
   SidebarToHostCalls,
   HostToSidebarCalls,
   SidebarToGuestCalls,
   GuestToSidebarCalls,
 } from '../../types/port-rpc-calls';
 import { isReply } from '../helpers/annotation-metadata';
-import { currentDocumentUri } from '../helpers/document-uri';
-import { PUBLIC_GROUP_ID } from '../helpers/groups';
-import { tagInventoryRowId } from '../store/modules/sidebar-panels';
 import {
   annotationMatchesSegment,
   segmentMatchesFocusFilters,
@@ -44,105 +40,26 @@ import { watch } from '../util/watch';
 import type { AnnotationsService } from './annotations';
 import type { ToastMessengerService } from './toast-messenger';
 
-function hiddenTagsEqual(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const sortedA = [...a].sort();
-  const sortedB = [...b].sort();
-  return sortedA.every((tag, index) => tag === sortedB[index]);
-}
-
 /**
  * Return a minimal representation of an annotation that can be sent from the
  * sidebar app to a guest frame.
  *
  * Because this representation will be exposed to untrusted third-party
  * JavaScript, it includes only the information needed to uniquely identify it
- * within the current session and anchor it in the document, plus `tags` so
- * highlights can apply tag-based CSS classes in the page.
+ * within the current session and anchor it in the document.
  */
 export function formatAnnot({
   $cluster,
   $tag,
   target,
   uri,
-  tags,
 }: Annotation): AnnotationData {
   return {
     $cluster,
     $tag,
     target,
     uri,
-    tags,
   };
-}
-
-function textQuoteAnchoringKey(
-  selectors: Selector[] | undefined,
-): { exact: string; prefix?: string; suffix?: string } | null {
-  const quote = selectors?.find(s => s.type === 'TextQuoteSelector') as
-    | TextQuoteSelector
-    | undefined;
-  if (!quote) {
-    return null;
-  }
-  return { exact: quote.exact, prefix: quote.prefix, suffix: quote.suffix };
-}
-
-/**
- * Return true when a geometry selector changed on both sides (not merely added).
- * Location enrichment often adds PageSelector/TextPositionSelector after the
- * highlight is already painted; those additions must not re-anchor the guest.
- */
-function geometrySelectorChanged(
-  previous: Selector[] | undefined,
-  current: Selector[] | undefined,
-  type: Selector['type'],
-): boolean {
-  const prev = previous?.find(s => s.type === type);
-  const curr = current?.find(s => s.type === type);
-  if (!prev || !curr) {
-    return false;
-  }
-  return !shallowEqual(prev, curr);
-}
-
-function formattedAnnotationChanged(
-  previous: Annotation,
-  current: Annotation,
-): boolean {
-  const prev = formatAnnot(previous);
-  const curr = formatAnnot(current);
-  if (prev.uri !== curr.uri || prev.$cluster !== curr.$cluster) {
-    return true;
-  }
-  if (!shallowEqual(prev.tags, curr.tags)) {
-    return true;
-  }
-
-  const prevSelectors = previous.target?.[0]?.selector;
-  const currSelectors = current.target?.[0]?.selector;
-  if (
-    !shallowEqual(
-      textQuoteAnchoringKey(prevSelectors),
-      textQuoteAnchoringKey(currSelectors),
-    )
-  ) {
-    return true;
-  }
-
-  for (const type of [
-    'TextPositionSelector',
-    'RangeSelector',
-    'ShapeSelector',
-  ] as const) {
-    if (geometrySelectorChanged(prevSelectors, currSelectors, type)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 /**
@@ -209,10 +126,6 @@ export class FrameSyncService {
 
   /** Whether highlights are visible in guest frames. */
   private _highlightsVisible: boolean;
-  /** Latest tag highlight palette to replay to newly connected guests. */
-  private _tagHighlightPalette: Record<string, string>;
-  /** Latest hidden annotation `$tag`s to replay to newly connected guests. */
-  private _hiddenAnnotationIds: string[];
 
   /**
    * Channel for sidebar-host communication.
@@ -289,8 +202,6 @@ export class FrameSyncService {
     this._guestRPC = new Map();
     this._inFrame = new Set<string>();
     this._highlightsVisible = false;
-    this._tagHighlightPalette = {};
-    this._hiddenAnnotationIds = [];
 
     this._pendingScrollToTag = null;
     this._pendingHoverTag = null;
@@ -331,8 +242,6 @@ export class FrameSyncService {
       let publicAnns = 0;
       const inSidebar = new Set<string>();
       const added = [] as Annotation[];
-      const changed = [] as Annotation[];
-      const previousByTag = new Map(prevAnnotations.map(ann => [ann.$tag, ann]));
 
       // Determine which annotations have been added or deleted in the sidebar.
       annotations.forEach(annot => {
@@ -348,11 +257,6 @@ export class FrameSyncService {
         inSidebar.add(annot.$tag);
         if (!this._inFrame.has(annot.$tag)) {
           added.push(annot);
-          return;
-        }
-        const previous = previousByTag.get(annot.$tag);
-        if (previous && formattedAnnotationChanged(previous, annot)) {
-          changed.push(annot);
         }
       });
       const deleted = prevAnnotations.filter(
@@ -401,31 +305,6 @@ export class FrameSyncService {
         added.forEach(annot => {
           this._inFrame.add(annot.$tag);
         });
-      }
-
-      if (changed.length > 0) {
-        const changedByFrame = new Map<string | null, Annotation[]>();
-        for (const annotation of changed) {
-          const frame = frameForAnnotation(frames, annotation);
-          if (!frame) {
-            continue;
-          }
-          if (
-            frame.segment &&
-            !annotationMatchesSegment(annotation, frame.segment)
-          ) {
-            continue;
-          }
-          const anns = changedByFrame.get(frame.id) ?? [];
-          anns.push(annotation);
-          changedByFrame.set(frame.id, anns);
-        }
-        for (const [frameId, anns] of changedByFrame) {
-          const rpc = this._guestRPC.get(frameId);
-          if (rpc) {
-            rpc.call('loadAnnotations', anns.map(formatAnnot));
-          }
-        }
       }
 
       // Remove deleted annotations from frames.
@@ -557,44 +436,10 @@ export class FrameSyncService {
 
       this._inFrame.add(annot.$tag);
 
-      const shouldAutoTag =
-        this._store.aiSearchPanelAnnotateManually() &&
-        this._store.aiSearchPanelSchemaTagInput().trim().length > 0;
-      if (shouldAutoTag) {
-        const schemaTag = this._store.aiSearchPanelSchemaTagInput().trim();
-        const query = this._store.aiSearchPanelQueryInput() ?? '';
-        const tags = annot.tags ?? [];
-        if (!tags.includes(schemaTag)) {
-          annot.tags = [...tags, schemaTag];
-        }
-
-        const groupId = this._store.focusedGroupId() ?? undefined;
-        const isPublic = groupId === PUBLIC_GROUP_ID;
-        const docUri = isPublic
-          ? (currentDocumentUri(this._store) ?? undefined)
-          : undefined;
-        if (!isPublic || docUri) {
-          this._store.addTagInventoryRow({
-            id: tagInventoryRowId(schemaTag, query, groupId, docUri),
-            groupId,
-            schemaTag,
-            query,
-            annotationIds: [],
-            ...(docUri !== undefined ? { documentUri: docUri } : {}),
-          });
-        }
-      }
-
       // Open the sidebar so that the user can immediately edit the draft
-      // annotation. For highlights, also navigate to the AI Search Panel so
-      // the user can search the document — unless they're already there.
+      // annotation.
       if (!annot.$highlight) {
         this._hostRPC.call('openSidebar');
-      } else {
-        this._hostRPC.call('openSidebar');
-        if (!this._store.isSidebarPanelOpen('aiSearchAnnotations')) {
-          this._store.openSidebarPanel('aiSearchAnnotations');
-        }
       }
 
       // Ensure that the highlight for the newly-created annotation is visible.
@@ -607,35 +452,9 @@ export class FrameSyncService {
     });
 
     // Anchoring an annotation in the frame completed
-    guestRPC.on('syncAnchoringStatus', (ann: AnnotationData) => {
-      const { $tag, $orphan } = ann;
+    guestRPC.on('syncAnchoringStatus', ({ $tag, $orphan }: AnnotationData) => {
       this._inFrame.add($tag);
       this._updateAnchorStatus($tag, $orphan ? 'orphan' : 'anchored');
-
-      // The guest keeps a minimal in-memory copy (often `tags: []` from creation).
-      // `ADD_ANNOTATIONS` merges with Object.assign — a later `syncAnchoringStatus`
-      // would otherwise overwrite sidebar tags / text with that stale payload.
-      const existing: Annotation | undefined =
-        (ann.id && this._store.findAnnotationByID(ann.id)) ||
-        (ann.$tag
-          ? this._store.allAnnotations().find(a => a.$tag === ann.$tag)
-          : undefined);
-
-      if (existing !== undefined) {
-        const draft = this._store.getDraft(existing);
-        const merged = {
-          ...existing,
-          ...ann,
-          tags: draft ? draft.tags : (existing.tags ?? ann.tags),
-          text: draft ? draft.text : (existing.text ?? ann.text),
-          permissions: ann.permissions ?? existing.permissions,
-        };
-        this._store.addAnnotations([merged as Annotation]);
-        this._annotationsService.persistEnrichedTargetIfChanged(
-          existing,
-          merged as Annotation,
-        );
-      }
 
       if ($tag === this._pendingHoverTag) {
         this._pendingHoverTag = null;
@@ -695,11 +514,6 @@ export class FrameSyncService {
     guestRPC.call('setHighlightsVisible', this._highlightsVisible);
     guestRPC.call('featureFlagsUpdated', this._store.features());
     guestRPC.call('shortcutsUpdated', getAllShortcuts());
-    guestRPC.call(
-      'setTagHighlightPalette',
-      this._tagHighlightPalette,
-      this._hiddenAnnotationIds,
-    );
 
     // If we have content banner data, send it to the guest. If there are
     // multiple guests the banner is likely only appropriate for the main one.
@@ -723,9 +537,6 @@ export class FrameSyncService {
     });
     this._hostRPC.on('sidebarClosed', () => {
       this._sidebarIsOpen = false;
-    });
-    this._hostRPC.on('setSidebarFullWidth', (fullWidth: boolean) => {
-      this._store.setSidebarFullWidth(fullWidth);
     });
 
     // When user toggles the highlight visibility control in the sidebar container,
@@ -823,41 +634,6 @@ export class FrameSyncService {
     ...args: Parameters<SidebarToHostCalls[M]>
   ) {
     this._hostRPC.call(method, ...args);
-  }
-
-  /**
-   * Replace tag highlight colors in every connected guest (e.g. after a color
-   * picker change). Pass the full map each time.
-   */
-  setTagHighlightPalette(
-    palette: Record<string, string>,
-    hiddenAnnotationIds: string[] = [],
-  ): void {
-    const hiddenGuestTags = mapHiddenAnnotationIdsToGuestTags(
-      this._store.allAnnotations(),
-      hiddenAnnotationIds,
-    );
-    const paletteUnchanged =
-      Object.keys(palette).length === Object.keys(this._tagHighlightPalette).length &&
-      Object.entries(palette).every(
-        ([tag, color]) => this._tagHighlightPalette[tag] === color,
-      );
-    const hiddenUnchanged = hiddenTagsEqual(
-      hiddenGuestTags,
-      this._hiddenAnnotationIds,
-    );
-    if (paletteUnchanged && hiddenUnchanged) {
-      return;
-    }
-    this._tagHighlightPalette = { ...palette };
-    this._hiddenAnnotationIds = hiddenGuestTags;
-    this._guestRPC.forEach(rpc =>
-      rpc.call(
-        'setTagHighlightPalette',
-        this._tagHighlightPalette,
-        this._hiddenAnnotationIds,
-      ),
-    );
   }
 
   /**
@@ -966,27 +742,6 @@ export class FrameSyncService {
     guest.call('getDocumentInfo', resolve);
 
     return promise;
-  }
-
-  /**
-   * Read the PDF bytes from the guest frame (browser session) as base64.
-   * Used when the public document URL is not downloadable by Claude.
-   */
-  async getPdfBytes(): Promise<string> {
-    const guest = this._guestRPC.get(null);
-    if (!guest) {
-      throw new Error('No guest connected');
-    }
-
-    return new Promise((resolve, reject) => {
-      guest.call('getPdfBytes', result => {
-        if (result.ok) {
-          resolve(result.value);
-        } else {
-          reject(new Error(result.error));
-        }
-      });
-    });
   }
 
   // Only used to cleanup tests

@@ -1,6 +1,5 @@
 import fetchMock from 'fetch-mock';
 
-import { clientVersion } from '../../../test-util/client-version';
 import { APIService } from '../api';
 // API route directory.
 //
@@ -155,23 +154,6 @@ describe('APIService', () => {
     });
   });
 
-  it('lists annotations in a group', () => {
-    const groupAnnotations = {
-      meta: { page: { total: 0 } },
-      data: [],
-    };
-    expectCall(
-      'get',
-      `groups/an-id/annotations?${encodeURIComponent('page[size]')}=100`,
-      200,
-      groupAnnotations,
-    );
-    return api.group.annotations.read({
-      pubid: 'an-id',
-      'page[size]': 100,
-    });
-  });
-
   it('gets a group by provided group id', () => {
     const group = { id: 'group-id', name: 'Group' };
     expectCall('get', 'groups/group-id', 200, group);
@@ -321,7 +303,7 @@ describe('APIService', () => {
     expectCall('get', 'profile');
     return api.profile.read({}).then(() => {
       const [, options] = fetchMock.lastCall();
-      assert.equal(options.headers['Hypothesis-Client-Version'], clientVersion);
+      assert.equal(options.headers['Hypothesis-Client-Version'], '__VERSION__');
     });
   });
 

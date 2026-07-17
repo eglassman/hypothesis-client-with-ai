@@ -1,4 +1,3 @@
-import { clientVersion } from '../../../test-util/client-version';
 import { createAppConfig } from '../app';
 
 describe('createAppConfig', () => {
@@ -56,7 +55,7 @@ describe('createAppConfig', () => {
 
   it('adds client version to configuration', () => {
     const config = createAppConfig(appURL, {});
-    assert.equal(config.version, clientVersion);
+    assert.equal(config.version, '1.0.0-dummy-version');
   });
 
   it('adds host URL to configuration', () => {

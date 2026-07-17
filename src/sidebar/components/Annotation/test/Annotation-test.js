@@ -16,7 +16,6 @@ describe('Annotation', () => {
   // Injected dependency mocks
   let fakeAnnotationsService;
   let fakeStore;
-  let fakeToastMessenger;
 
   const setEditingMode = (isEditing = true) => {
     // The presence of a draft will make `isEditing` `true`
@@ -36,7 +35,6 @@ describe('Annotation', () => {
         replyCount={0}
         threadIsCollapsed={true}
         settings={{}}
-        toastMessenger={fakeToastMessenger}
         {...props}
       />,
     );
@@ -46,12 +44,6 @@ describe('Annotation', () => {
     fakeAnnotationsService = {
       reply: sinon.stub(),
       save: sinon.stub().resolves(),
-    };
-
-    fakeToastMessenger = {
-      error: sinon.stub(),
-      success: sinon.stub(),
-      notice: sinon.stub(),
     };
 
     fakeAnnotationUser = {

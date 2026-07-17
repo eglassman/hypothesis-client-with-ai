@@ -80,7 +80,6 @@ describe('StreamerService', () => {
   let fakeAuth;
   let fakeGroups;
   let fakeSession;
-  let fakeTagInventoryGroupSync;
   let fakeWarnOnce;
   let activeStreamer;
   let fakeSetTimeout;
@@ -90,7 +89,6 @@ describe('StreamerService', () => {
       fakeStore,
       fakeAPIRoutes,
       fakeAuth,
-      fakeTagInventoryGroupSync,
       fakeGroups,
       fakeSession,
       { setTimeout: fakeSetTimeout },
@@ -144,11 +142,6 @@ describe('StreamerService', () => {
 
     fakeSession = {
       update: sinon.stub(),
-    };
-
-    fakeTagInventoryGroupSync = {
-      applyStoreAnnotationsToInventory: sinon.stub().returns(Promise.resolve()),
-      mergePendingUpdatesIntoCache: sinon.stub(),
     };
 
     fakeWarnOnce = sinon.stub();
@@ -559,23 +552,6 @@ describe('StreamerService', () => {
       assert.notCalled(fakeStore.addAnnotations);
       assert.notCalled(fakeStore.removeAnnotations);
       assert.called(fakeStore.clearPendingUpdates);
-      assert.notCalled(fakeTagInventoryGroupSync.mergePendingUpdatesIntoCache);
-      assert.notCalled(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
-    });
-
-    it('merges pending updates into the group cache and syncs AI search history', () => {
-      const update = { id: 'an-id', group: 'private-group' };
-      fakeStore.pendingUpdates.returns({ 'an-id': update });
-      fakeStore.pendingDeletions.returns({ 'gone-id': true });
-
-      activeStreamer.applyPendingUpdates();
-
-      assert.calledWith(
-        fakeTagInventoryGroupSync.mergePendingUpdatesIntoCache,
-        [update],
-        ['gone-id'],
-      );
-      assert.calledOnce(fakeTagInventoryGroupSync.applyStoreAnnotationsToInventory);
     });
   });
 

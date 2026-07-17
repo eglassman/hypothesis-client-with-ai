@@ -190,7 +190,7 @@ describe('Guest', () => {
       getAnnotatableRange: sinon.stub().returnsArg(0),
       canStyleClusteredHighlights: sinon.stub().returns(false),
       contentContainer: sinon.stub().returns({}),
-      describe: sinon.stub().resolves([]),
+      describe: sinon.stub(),
       destroy: sinon.stub(),
       fitSideBySide: sinon.stub().returns(false),
       getMetadata: sinon.stub().resolves({
@@ -522,7 +522,7 @@ describe('Guest', () => {
         );
       });
 
-      it('marks previously-hovered highlights as not focused', () => {
+      it('marks highlights of other annotations as not focused', () => {
         const highlight0 = document.createElement('span');
         const highlight1 = document.createElement('span');
         const guest = createGuest();
@@ -532,11 +532,10 @@ describe('Guest', () => {
         ];
 
         emitSidebarEvent('hoverAnnotations', ['tag1']);
-        emitSidebarEvent('hoverAnnotations', ['tag2']);
 
         assert.calledWith(
           fakeHighlighter.setHighlightsFocused,
-          guest.anchors[0].highlights,
+          guest.anchors[1].highlights,
           false,
         );
       });
@@ -1326,26 +1325,6 @@ describe('Guest', () => {
       assert.calledWith(sidebarRPC().call, 'hoverAnnotations', []);
     });
 
-    it('deduplicates tags when multiple hit highlights map to the same annotation', () => {
-      fakeHighlighter.getHighlightsFromPoint.returns([
-        { _annotation: { $tag: 'highlight-ann-tag' } },
-        { _annotation: { $tag: 'highlight-ann-tag' } },
-      ]);
-      createGuest();
-
-      fakeHighlight.dispatchEvent(
-        new MouseEvent('mouseover', {
-          bubbles: true,
-          clientX: 50,
-          clientY: 60,
-        }),
-      );
-
-      assert.calledWith(sidebarRPC().call, 'hoverAnnotations', [
-        'highlight-ann-tag',
-      ]);
-    });
-
     it('does not focus annotations in the sidebar when a non-highlight element is hovered', () => {
       fakeHighlighter.getHighlightsFromPoint.returns([]);
       createGuest();
@@ -1880,6 +1859,18 @@ describe('Guest', () => {
       });
     });
 
+    it('calls "syncAnchoringStatus" RPC method', async () => {
+      const guest = createGuest();
+      const annotation = {};
+
+      await guest.anchor(annotation);
+
+      assert.match(sidebarRPC().call.lastCall.args, [
+        'syncAnchoringStatus',
+        annotation,
+      ]);
+    });
+
     it('provides CSS classes for anchor highlight elements', async () => {
       const guest = createGuest();
       const annotation = {
@@ -1896,22 +1887,6 @@ describe('Guest', () => {
       );
     });
 
-    it('excludes moderation status tags from highlight color tags', async () => {
-      const guest = createGuest();
-      const annotation = {
-        $cluster: 'user-annotations',
-        tags: ['policy-tag', 'ai-pending', 'ai-user-approved'],
-        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
-      };
-      fakeIntegration.anchor.resolves(range);
-
-      await guest.anchor(annotation);
-
-      assert.deepEqual(fakeHighlighter.highlightRange.lastCall.args[2], [
-        'policy-tag',
-      ]);
-    });
-
     it('returns anchors for an annotation with a quote selector', async () => {
       const guest = createGuest();
       const highlights = [document.createElement('span')];
@@ -1924,96 +1899,6 @@ describe('Guest', () => {
       const anchors = await guest.anchor({ target: [target] });
 
       assert.equal(anchors.length, 1);
-    });
-
-    it('merges TextPositionSelector and PageSelector from describe for quote-only targets', async () => {
-      const guest = createGuest();
-      fakeIntegration.anchor.resolves(range);
-      const pos = { type: 'TextPositionSelector', start: 10, end: 15 };
-      const page = { type: 'PageSelector', index: 2 };
-      fakeIntegration.describe.resolves([pos, page]);
-
-      const target = {
-        selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
-      };
-      await guest.anchor({ target: [target] });
-
-      assert.include(
-        target.selector,
-        pos,
-        'merged TextPositionSelector from describe',
-      );
-      assert.include(
-        target.selector,
-        page,
-        'merged PageSelector from describe',
-      );
-      assert.equal(
-        target.selector.filter(s => s.type === 'TextQuoteSelector').length,
-        1,
-      );
-    });
-
-    it('falls back to describeQuoteOnly when describe does not add location', async () => {
-      const guest = createGuest();
-      fakeIntegration.anchor.resolves(range);
-      fakeIntegration.describe.resolves([]);
-      const pos = { type: 'TextPositionSelector', start: 10, end: 15 };
-      const page = { type: 'PageSelector', index: 2 };
-      fakeIntegration.describeQuoteOnly = sinon.stub().resolves([pos, page]);
-
-      const target = {
-        selector: [{ type: 'TextQuoteSelector', exact: 'hello' }],
-      };
-      await guest.anchor({ target: [target] });
-
-      assert.called(fakeIntegration.describeQuoteOnly);
-      assert.include(target.selector, pos);
-      assert.include(target.selector, page);
-    });
-
-    it('merges quote display metadata in phase 2 when position selectors exist', async () => {
-      const guest = createGuest();
-      fakeIntegration.anchor.resolves(range);
-      fakeIntegration.describe.resolves([
-        {
-          type: 'TextQuoteSelector',
-          exact: 'ignored',
-          displayExact: 'hello world',
-        },
-      ]);
-
-      const target = {
-        selector: [
-          { type: 'TextQuoteSelector', exact: 'hello' },
-          { type: 'TextPositionSelector', start: 0, end: 5 },
-        ],
-      };
-      await guest.anchor({ target: [target] });
-
-      const quote = target.selector.find(s => s.type === 'TextQuoteSelector');
-      assert.equal(quote.displayExact, 'hello world');
-      assert.equal(quote.exact, 'hello');
-    });
-
-    it('does not call describe when location and quote display are complete', async () => {
-      const guest = createGuest();
-      fakeIntegration.anchor.resolves(range);
-      fakeIntegration.describe.resetHistory();
-
-      const target = {
-        selector: [
-          {
-            type: 'TextQuoteSelector',
-            exact: 'hello',
-            displayExact: 'hello',
-          },
-          { type: 'TextPositionSelector', start: 0, end: 5 },
-        ],
-      };
-      await guest.anchor({ target: [target] });
-
-      assert.notCalled(fakeIntegration.describe);
     });
 
     it('returns anchors for an annotation with a shape selector', async () => {
@@ -2064,54 +1949,6 @@ describe('Guest', () => {
         assert.calledOnce(removeHighlights);
         assert.calledWith(removeHighlights, highlights);
       });
-    });
-
-    it('preserves existing highlights until replacement highlights are ready', async () => {
-      const guest = createGuest();
-      const oldAnchor = {
-        annotation: { $tag: 'tag1' },
-        target: {},
-        highlights: [document.createElement('span')],
-      };
-      guest.anchors = [oldAnchor];
-      const annotation = {
-        $tag: 'tag1',
-        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
-      };
-      const replacementHighlights = [document.createElement('span')];
-      fakeIntegration.anchor.resolves(range);
-      fakeHighlighter.highlightRange.returns(replacementHighlights);
-
-      const detachSpy = sinon.spy(guest, 'detach');
-      await guest.anchor(annotation, { preserveExistingHighlights: true });
-
-      assert.notCalled(detachSpy);
-      assert.calledWith(fakeHighlighter.removeHighlights, oldAnchor.highlights);
-      assert.callOrder(
-        fakeHighlighter.highlightRange,
-        fakeHighlighter.removeHighlights,
-      );
-      assert.strictEqual(guest.anchors[0].highlights, replacementHighlights);
-    });
-
-    it('retains existing highlights if preserve-mode replacement anchoring fails', async () => {
-      const guest = createGuest();
-      const oldAnchor = {
-        annotation: { $tag: 'tag1' },
-        target: {},
-        highlights: [document.createElement('span')],
-      };
-      guest.anchors = [oldAnchor];
-      const annotation = {
-        $tag: 'tag1',
-        target: [{ selector: [{ type: 'TextQuoteSelector', exact: 'hello' }] }],
-      };
-      fakeIntegration.anchor.rejects(new Error('Failed to anchor'));
-
-      await guest.anchor(annotation, { preserveExistingHighlights: true });
-
-      assert.notCalled(fakeHighlighter.removeHighlights);
-      assert.strictEqual(guest.anchors[0], oldAnchor);
     });
 
     it('focuses the new highlights if the annotation is already focused', async () => {

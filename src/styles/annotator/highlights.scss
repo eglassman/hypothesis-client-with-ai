@@ -176,10 +176,6 @@
 .hypothesis-highlights-always-on .hypothesis-svg-highlight {
   fill: var(--highlight-color);
 
-  &[data-has-tag-overlays] {
-    fill: transparent;
-  }
-
   &.is-opaque {
     fill: yellow;
   }
@@ -187,19 +183,6 @@
   &[data-is-focused] {
     fill: var(--highlight-color-focused);
   }
-}
-
-.hypothesis-highlights-always-on .hypothesis-svg-highlight-overlay {
-  fill: transparent;
-
-  &[data-is-focused] {
-    fill: var(--highlight-overlay-color, transparent);
-  }
-}
-
-.hypothesis-highlights-always-on .hypothesis-svg-highlight-focus-tint {
-  fill: black;
-  fill-opacity: 0.22;
 }
 
 .hypothesis-highlights-always-on .hypothesis-highlight {

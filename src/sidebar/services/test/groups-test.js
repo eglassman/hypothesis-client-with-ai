@@ -83,9 +83,6 @@ describe('GroupsService', () => {
         focusedGroup() {
           return this.getState().groups.focusedGroup;
         },
-        mainFrame() {
-          return this.getState().frames[0];
-        },
         defaultContentFrame() {
           return this.getState().frames[0];
         },

@@ -4,7 +4,7 @@ export type SidebarAppConfig = {
 
   /** A mapping from canonical asset path to cache-busted asset path. */
   manifest: Record<string, string>;
-  apiUrl?: string;
+  apiUrl: string;
 };
 
 export type AnnotatorConfig = {
@@ -108,13 +108,9 @@ type PreloadOptions = {
 function preloadURL(
   doc: Document,
   type: string,
-  url: string | undefined,
+  url: string,
   { crossOrigin }: PreloadOptions = {},
 ) {
-  if (!url) {
-    return;
-  }
-
   const link = doc.createElement('link');
   link.rel = 'preload';
   link.as = type;
@@ -137,14 +133,7 @@ function preloadURL(
 }
 
 function assetURL(config: SidebarAppConfig | AnnotatorConfig, path: string) {
-  const manifestPath =
-    config.manifest[path] ?? config.manifest[path.replace(/\//g, '\\')];
-
-  if (!manifestPath) {
-    throw new Error(`Asset "${path}" not found in Hypothesis client manifest`);
-  }
-
-  return config.assetRoot + 'build/' + manifestPath.replace(/\\/g, '/');
+  return config.assetRoot + 'build/' + config.manifest[path];
 }
 
 /**
@@ -211,10 +200,8 @@ export function bootHypothesisClient(doc: Document, config: AnnotatorConfig) {
  */
 export function bootSidebarApp(doc: Document, config: SidebarAppConfig) {
   // Preload `/api/` and `/api/links` API responses.
-  if (config.apiUrl) {
-    preloadURL(doc, 'fetch', config.apiUrl);
-    preloadURL(doc, 'fetch', config.apiUrl + 'links');
-  }
+  preloadURL(doc, 'fetch', config.apiUrl);
+  preloadURL(doc, 'fetch', config.apiUrl + 'links');
 
   const scripts = ['scripts/sidebar.bundle.js'];
   for (const path of scripts) {

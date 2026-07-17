@@ -11,12 +11,10 @@ export type State = {
    * current state of the sidebar, but tracks whether it has ever been open
    */
   sidebarHasOpened: boolean;
-  sidebarIsFullWidth: boolean;
 };
 
 const initialState: State = {
   sidebarHasOpened: false,
-  sidebarIsFullWidth: false,
 };
 
 const reducers = {
@@ -28,25 +26,14 @@ const reducers = {
     // Otherwise, nothing to do here
     return {};
   },
-  SET_SIDEBAR_FULL_WIDTH(_state: State, action: { fullWidth: boolean }) {
-    return { sidebarIsFullWidth: action.fullWidth };
-  },
 };
 
 function setSidebarOpened(opened: boolean) {
   return makeAction(reducers, 'SET_SIDEBAR_OPENED', { opened });
 }
 
-function setSidebarFullWidth(fullWidth: boolean) {
-  return makeAction(reducers, 'SET_SIDEBAR_FULL_WIDTH', { fullWidth });
-}
-
 function hasSidebarOpened(state: State) {
   return state.sidebarHasOpened;
-}
-
-function isSidebarFullWidth(state: State) {
-  return state.sidebarIsFullWidth;
 }
 
 export const viewerModule = createStoreModule(initialState, {
@@ -54,10 +41,8 @@ export const viewerModule = createStoreModule(initialState, {
   reducers,
   actionCreators: {
     setSidebarOpened,
-    setSidebarFullWidth,
   },
   selectors: {
     hasSidebarOpened,
-    isSidebarFullWidth,
   },
 });

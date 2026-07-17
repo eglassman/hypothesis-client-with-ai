@@ -370,19 +370,19 @@ describe('sidebar/store/modules/selection', () => {
   });
 
   describe('sortKeys with comments mode', () => {
-    it('includes location for anchored tabs; notes tab has only time sorts', () => {
+    it('does not return location when comments mode is enabled', () => {
       fakeSettings.commentsMode = true;
 
       const store = initializeStore();
 
       store.selectTab('annotation');
-      assert.deepEqual(store.sortKeys(), ['newest', 'oldest', 'location']);
+      assert.deepEqual(store.sortKeys(), ['newest', 'oldest']);
 
       store.selectTab('note');
       assert.deepEqual(store.sortKeys(), ['newest', 'oldest']);
 
       store.selectTab('orphan');
-      assert.deepEqual(store.sortKeys(), ['newest', 'oldest', 'location']);
+      assert.deepEqual(store.sortKeys(), ['newest', 'oldest']);
     });
   });
 });

@@ -395,64 +395,6 @@ describe('sidebar/helpers/annotation-metadata', () => {
     });
   });
 
-  describe('hasSortableLocation', () => {
-    it('returns true when page index is present', () => {
-      const ann = Object.assign({}, fixtures.defaultAnnotation(), {
-        target: [
-          {
-            source: 'https://example.com',
-            selector: [{ type: 'PageSelector', index: 2 }],
-          },
-        ],
-      });
-      assert.isTrue(annotationMetadata.hasSortableLocation(ann));
-    });
-
-    it('returns false for quote-only selectors', () => {
-      assert.isFalse(
-        annotationMetadata.hasSortableLocation(fixtures.defaultAnnotation()),
-      );
-    });
-  });
-
-  describe('isPendingLocationEnrichment', () => {
-    it('returns true for quote-only anchored annotations', () => {
-      const ann = Object.assign({}, fixtures.defaultAnnotation(), {
-        $orphan: false,
-        target: [
-          {
-            source: 'https://example.com',
-            selector: [{ type: 'TextQuoteSelector', exact: 'text' }],
-          },
-        ],
-      });
-      assert.isTrue(annotationMetadata.isPendingLocationEnrichment(ann));
-    });
-
-    it('returns false for orphans', () => {
-      const ann = Object.assign({}, fixtures.defaultAnnotation(), {
-        $orphan: true,
-      });
-      assert.isFalse(annotationMetadata.isPendingLocationEnrichment(ann));
-    });
-
-    it('returns false when location selectors are present', () => {
-      const ann = Object.assign({}, fixtures.defaultAnnotation(), {
-        $orphan: false,
-        target: [
-          {
-            source: 'https://example.com',
-            selector: [
-              { type: 'TextQuoteSelector', exact: 'text' },
-              { type: 'TextPositionSelector', start: 0, end: 4 },
-            ],
-          },
-        ],
-      });
-      assert.isFalse(annotationMetadata.isPendingLocationEnrichment(ann));
-    });
-  });
-
   describe('isSaved', () => {
     it('returns true for saved annotations', () => {
       assert.isTrue(isSaved(fixtures.defaultAnnotation()));
@@ -487,24 +429,6 @@ describe('sidebar/helpers/annotation-metadata', () => {
         ],
       };
       assert.equal(annotationMetadata.quote(ann), 'expected quote');
-    });
-
-    it('returns displayExact when present on the text quote selector', () => {
-      const ann = {
-        target: [
-          {
-            source: 'https://publisher.org/article.pdf',
-            selector: [
-              {
-                type: 'TextQuoteSelector',
-                exact: 'wordAwordB',
-                displayExact: 'wordA wordB',
-              },
-            ],
-          },
-        ],
-      };
-      assert.equal(annotationMetadata.quote(ann), 'wordA wordB');
     });
 
     // FIXME - This currently happens when creating a new Page Note. Annotations
