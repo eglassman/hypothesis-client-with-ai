@@ -232,8 +232,13 @@ export function tagInventoryRowDescriptorsForAnnotation(
   }
 
   if (tags.includes(AI_USER_APPROVED)) {
+    const primaryTag = primarySchemaTagFromTags(tags);
     for (const schemaTag of positiveSchemaTags(tags)) {
-      out.push({ schemaTag, query: textQuery });
+      const query =
+        primaryTag === null || norm(schemaTag) === norm(primaryTag)
+          ? textQuery
+          : '';
+      out.push({ schemaTag, query });
     }
     return out;
   }
