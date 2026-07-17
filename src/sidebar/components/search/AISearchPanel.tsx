@@ -47,7 +47,6 @@ import {
   isNegativeSchemaTag,
   isTagInventoryRowVisibleInScope,
   listAnnotationsForTagInventoryRow,
-  positiveSchemaTags,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
 import {
@@ -61,7 +60,6 @@ import {
   isClaudeDocumentDownloadError,
   type ClaudeSearchResult,
   type ClaudeService,
-  type QuoteTagClassification,
 } from '../../services/claude';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { FrameSyncService } from '../../services/frame-sync';
@@ -561,98 +559,6 @@ function AISearchPanel({
       }
       if (created.length) {
         store.addAnnotations(created);
-      }
-
-      // Step 2: for each returned quote, identify any OTHER group tags that also apply.
-      // Collect all unique positive schema tags from any annotation in the group
-      // (not restricted to approved), plus a description map (preferring approved).
-      const allGroupTagsSet = new Set<string>();
-      const tagDescriptions: Record<string, string> = {};
-      for (const ann of fewShotAnnotations) {
-        const annTags = ann.tags ?? [];
-        const isAiAnnotation =
-          annTags.includes('ai-pending') || annTags.includes('ai-user-approved');
-        for (const t of positiveSchemaTags(annTags)) {
-          allGroupTagsSet.add(t);
-          // Only treat ann.text as a query/description for AI-created annotations.
-          // For manually-applied annotations, ann.text is a personal note, not a query.
-          if (isAiAnnotation && ann.text?.trim()) {
-            // Approved annotations win over pending ones.
-            if (annTags.includes('ai-user-approved') || !tagDescriptions[t]) {
-              tagDescriptions[t] = ann.text.trim();
-            }
-          }
-        }
-      }
-      const otherTags = [...allGroupTagsSet].filter(
-        t => t.trim() !== tagTrim && !t.startsWith('node-link-state'),
-      );
-      console.log('[AISearch Step 2] otherTags:', otherTags, 'created:', created.length, 'aborted:', signal.aborted);
-      if (created.length > 0 && otherTags.length > 0 && !signal.aborted) {
-        try {
-          toastMessenger.notice('Identifying additional tags…');
-          const quoteTexts = created.map(ann => annotationQuote(ann) ?? '');
-          const classifications: QuoteTagClassification[] =
-            await claude.classifyQuotesForOtherTags({
-              quotes: quoteTexts,
-              tags: otherTags,
-              tagDescriptions,
-              apiKey: claude.apiKey(),
-              signal,
-            });
-
-          console.log('[AISearch Step 2] classifications:', JSON.stringify(classifications));
-          const validTagSet = new Set(otherTags);
-          const savedAnns = store.savedAnnotations();
-          for (const { quoteIndex, additionalTags } of classifications) {
-            if (signal.aborted) {
-              break;
-            }
-            const ann = created[quoteIndex];
-            if (!ann?.id || !additionalTags.length) {
-              continue;
-            }
-            const quoteText = (annotationQuote(ann) ?? '').trim();
-            const extraTags = additionalTags.filter(
-              t => validTagSet.has(t) && !(ann.tags ?? []).includes(t),
-            );
-            console.log('[AISearch Step 2] quoteIndex:', quoteIndex, 'additionalTags:', additionalTags, 'extraTags:', extraTags);
-            for (const extraTag of extraTags) {
-              // Skip if any existing annotation already covers this quote+tag.
-              const alreadyCovered = savedAnns.some(
-                existing =>
-                  existing.uri === documentUri &&
-                  (existing.tags ?? []).includes(extraTag) &&
-                  (annotationQuote(existing) ?? '').trim() === quoteText,
-              );
-              if (alreadyCovered) {
-                continue;
-              }
-              // Reuse the known description for this tag (built above from all
-              // annotations, preferring approved) so the new pending annotation
-              // lands under the existing row rather than creating "No query".
-              const existingQuery = tagDescriptions[extraTag] ?? '';
-              const extraPayload = {
-                group: groupId,
-                uri: documentUri,
-                target: ann.target,
-                text: existingQuery,
-                tags: expectedTagsForStrictAISearchPending(extraTag),
-                permissions: sharedPermissions(userid, groupId),
-              };
-              const newAnn = await api.annotation.create({}, extraPayload);
-              console.log('[AISearch Step 2] created annotation for', extraTag, 'query:', existingQuery, 'id:', newAnn.id);
-              store.addAnnotations([newAnn]);
-            }
-          }
-        } catch (err) {
-          if (!isAbortError(err)) {
-            console.warn(
-              '[AISearch] Step 2 tag classification failed (non-fatal):',
-              err,
-            );
-          }
-        }
       }
 
       const newIds = created

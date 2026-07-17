@@ -461,54 +461,6 @@ export class AnnotationsService {
     const isAiPending = tags.includes('ai-pending');
 
     if (isAiPending && newStatus === 'APPROVED') {
-      const schemaTag =
-        tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '';
-      const pendingQuote = (metadata.quote(annotation) ?? '').trim();
-
-      // If an already-approved annotation covers this same quote, merge the
-      // new tag into it and delete the pending annotation rather than creating
-      // a second annotation anchored to the same text.
-      const existingApproved = this._store
-        .savedAnnotations()
-        .find(
-          ann =>
-            metadata.isSaved(ann) &&
-            ann.id !== annotation.id &&
-            ann.uri === annotation.uri &&
-            (ann.tags ?? []).includes('ai-user-approved') &&
-            schemaTag &&
-            !(ann.tags ?? []).includes(schemaTag) &&
-            (metadata.quote(ann) ?? '').trim() === pendingQuote,
-        );
-
-      if (existingApproved) {
-        // Add the new schema tag to the existing approved annotation.
-        const mergedTags = [...(existingApproved.tags ?? []), schemaTag];
-        const updatedExisting = await this._updateAnnotationTags(
-          existingApproved,
-          mergedTags,
-        );
-
-        // Delete the now-redundant pending annotation from server + store.
-        await this._api.annotation.delete({ id: annotation.id });
-        this._store.removeAnnotations([annotation]);
-        if (annotation.id) {
-          this._store.removeAnnotationIdsFromTagInventoryRows([annotation.id]);
-        }
-
-        void this._tagInventoryGroupSync.applyStoreAnnotationsToInventory();
-
-        this._experimentLog.logAccept({
-          annotationId: existingApproved.id!,
-          quoteText: pendingQuote,
-          schemaTag,
-          documentUri: existingApproved.uri,
-        });
-
-        return updatedExisting;
-      }
-
-      // No existing approved annotation covers this quote — standard approval.
       const newTags = tags.filter(t => t !== 'ai-pending');
       if (!newTags.includes('ai-user-approved')) {
         newTags.push('ai-user-approved');
@@ -539,7 +491,8 @@ export class AnnotationsService {
       this._experimentLog.logAccept({
         annotationId: savedAnnotation.id!,
         quoteText: metadata.quote(savedAnnotation) ?? '',
-        schemaTag,
+        schemaTag:
+          tags.find(t => t !== 'ai-pending' && t !== 'ai-user-approved') ?? '',
         documentUri: savedAnnotation.uri,
       });
 
