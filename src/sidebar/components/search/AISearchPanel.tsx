@@ -23,6 +23,7 @@ import type { SavedAnnotation } from '../../../types/api';
 import { quote as annotationQuote } from '../../helpers/annotation-metadata';
 import {
   buildClaudeAISearchUserMessage,
+  buildClaudeStep2UserMessage,
   collectNegativeExamplesFromAnnotations,
   collectPositiveExamplesFromAnnotations,
   countAiSearchQuotesSkippedAsDuplicates,
@@ -43,10 +44,12 @@ import { formatSidebarTagFilter } from '../../helpers/filter-query-for-tag';
 import { PUBLIC_GROUP_ID } from '../../helpers/groups';
 import { sharedPermissions } from '../../helpers/permissions';
 import {
+  aiPrimaryTagMarker,
   countAnnotationsForTagInventoryRow,
   isNegativeSchemaTag,
   isTagInventoryRowVisibleInScope,
   listAnnotationsForTagInventoryRow,
+  positiveSchemaTags,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
 import {
@@ -559,6 +562,82 @@ function AISearchPanel({
       }
       if (created.length) {
         store.addAnnotations(created);
+      }
+
+      // Step 2: for each returned quote, ask Claude which other tags apply.
+      // Extra tags are added to the same annotation alongside the primary tag.
+      // An `ai-primary-tag:<name>` system marker is added so the inventory
+      // counts extra tags under "No query" rows, not the primary tag's query row.
+      if (created.length > 0 && !signal.aborted) {
+        // Build the allowed tag set from the live store so it includes tags
+        // created during this session (not just those loaded at search start).
+        const knownTagSet = new Set(
+          store
+            .savedAnnotations()
+            .filter(a => a.group === groupId)
+            .flatMap(a => positiveSchemaTags(a.tags ?? [])),
+        );
+        try {
+          toastMessenger.notice('Identifying additional tags…');
+          for (const ann of created) {
+            if (signal.aborted) {
+              break;
+            }
+            const quoteText = (annotationQuote(ann) ?? '').trim();
+            if (!quoteText) {
+              continue;
+            }
+            const step2Message = buildClaudeStep2UserMessage(
+              {
+                positiveExamples,
+                negativeExamples,
+                tagReference,
+                schemaTag: tagTrim,
+              },
+              quoteText,
+            );
+            const otherTags = await claude.classifyQuoteForOtherTags({
+              userMessage: step2Message,
+              apiKey: claude.apiKey(),
+              signal,
+            });
+            const extraTags = otherTags.filter(t => {
+              const trimmed = t.trim();
+              return (
+                trimmed !== tagTrim &&
+                knownTagSet.has(trimmed) &&
+                !(ann.tags ?? []).includes(trimmed)
+              );
+            });
+            console.log('[AISearch Step 2] quote:', quoteText);
+            console.log('[AISearch Step 2] otherTags (raw from Claude):', otherTags);
+            console.log('[AISearch Step 2] extraTags (after filtering):', extraTags);
+            console.log('[AISearch Step 2] knownTagSet:', [...knownTagSet]);
+            if (!extraTags.length) {
+              continue;
+            }
+            const primaryMarker = aiPrimaryTagMarker(tagTrim);
+            const newTags = [
+              ...(ann.tags ?? []),
+              primaryMarker,
+              ...extraTags,
+            ];
+            let updated = await api.annotation.update(
+              { id: ann.id },
+              { tags: newTags },
+            );
+            for (const [key, value] of Object.entries(ann)) {
+              if (key.startsWith('$')) {
+                updated = { ...updated, [key]: value };
+              }
+            }
+            store.addAnnotations([updated as SavedAnnotation]);
+          }
+        } catch (err) {
+          if (!isAbortError(err)) {
+            console.warn('[AISearch] Step 2 failed (non-fatal):', err);
+          }
+        }
       }
 
       const newIds = created

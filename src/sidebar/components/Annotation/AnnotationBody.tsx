@@ -9,6 +9,7 @@ import { isThirdPartyUser } from '../../helpers/account-id';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
+  isAiPrimaryTagMarker,
 } from '../../helpers/tag-inventory-group';
 import type { MentionMode } from '../../helpers/mentions';
 import { applyTheme } from '../../helpers/theme';
@@ -90,7 +91,10 @@ function AnnotationBody({
   const mentionsEnabled = store.isFeatureEnabled('at_mentions');
 
   // If there is a draft use the tag and text from it.
-  const tags = draft?.tags ?? annotation.tags ?? [];
+  // Strip internal Step-2 system markers before display.
+  const tags = (draft?.tags ?? annotation.tags ?? []).filter(
+    t => !isAiPrimaryTagMarker(t),
+  );
   const text = draft?.text ?? annotation.text ?? '';
   const showExcerpt = text.length > 0;
   const showTagList = tags.length > 0;

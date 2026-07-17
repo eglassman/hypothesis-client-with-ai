@@ -647,20 +647,15 @@ function formatTagReferenceLines(entries: TagReferencePromptEntry[]): string {
   return lines;
 }
 
-export function buildClaudeAISearchUserMessage(params: {
+type PromptPrefixParams = {
   positiveExamples: FewShotExampleRow[];
-  schemaTag: string;
-  searchQuery: string;
   negativeExamples?: FewShotExampleRow[];
   tagReference?: TagReferencePromptEntry[];
-}): string {
-  const {
-    positiveExamples,
-    schemaTag,
-    searchQuery,
-    negativeExamples,
-    tagReference,
-  } = params;
+};
+
+/** Shared prefix: tag relationships + positive/negative few-shot examples. */
+function buildPromptPrefix(params: PromptPrefixParams): string {
+  const { positiveExamples, negativeExamples, tagReference } = params;
   let body = '';
   if (tagReference?.length) {
     body += 'Tag relationships for the selected group:\n';
@@ -683,10 +678,36 @@ export function buildClaudeAISearchUserMessage(params: {
     }
     body += '\n';
   }
-  if (schemaTag.trim()) {
-    body += `What retrieved verbatim quotes from the document would go with the tag "${schemaTag}" and the query "${searchQuery}"?`;
-  } else {
-    body += `New query: ${searchQuery}.`;
-  }
   return body;
+}
+
+export function buildClaudeAISearchUserMessage(params: {
+  positiveExamples: FewShotExampleRow[];
+  schemaTag: string;
+  searchQuery: string;
+  negativeExamples?: FewShotExampleRow[];
+  tagReference?: TagReferencePromptEntry[];
+}): string {
+  const { schemaTag, searchQuery, ...prefixParams } = params;
+  const prefix = buildPromptPrefix(prefixParams);
+  if (schemaTag.trim()) {
+    return prefix + `What retrieved verbatim quotes from the document would go with the tag "${schemaTag}" and the query "${searchQuery}"?`;
+  }
+  return prefix + `New query: ${searchQuery}.`;
+}
+
+/**
+ * Step 2 prompt: same prefix as the primary search, but asks which OTHER tags
+ * apply to a specific already-returned quote rather than searching for new quotes.
+ */
+export function buildClaudeStep2UserMessage(
+  params: PromptPrefixParams & { schemaTag: string },
+  quoteText: string,
+): string {
+  const { schemaTag, ...prefixParams } = params;
+  const prefix = buildPromptPrefix(prefixParams);
+  return (
+    prefix +
+    `Which other tags (not "${schemaTag}") clearly apply to this quote? Return an empty list if none do: "${quoteText}"`
+  );
 }
