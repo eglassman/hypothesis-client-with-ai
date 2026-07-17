@@ -4,24 +4,25 @@ import sinon from 'sinon';
 import { emptyNodeLinkState } from '../../../node-link/graph-state';
 import {
   $imports,
+  ManualEdgeViewport,
   NodeLinkEditor,
   NodeLinkGraphPage,
   routeGroupToApply,
 } from '../NodeLinkGraphPage';
 
+function tagNode(tag) {
+  return {
+    id: `tag:${tag}`,
+    tag,
+    quoteCount: 1,
+    documentCount: 1,
+    documentUris: ['https://example.com/doc'],
+    descriptive: false,
+  };
+}
+
 describe('NodeLinkEditor', () => {
   const tagColors = {};
-
-  function tagNode(tag) {
-    return {
-      id: `tag:${tag}`,
-      tag,
-      quoteCount: 1,
-      documentCount: 1,
-      documentUris: ['https://example.com/doc'],
-      descriptive: false,
-    };
-  }
 
   function createComponent({ semanticState, onSaveState = sinon.stub() } = {}) {
     const state =
@@ -99,6 +100,138 @@ describe('NodeLinkEditor', () => {
 
     assert.calledOnce(onSaveState);
     assert.lengthOf(onSaveState.firstCall.args[0].tagEdges, 0);
+  });
+
+  it('uses searchable tag comboboxes when adding and editing edges', () => {
+    const { wrapper } = createComponent();
+
+    assert.lengthOf(wrapper.find('TagCombobox'), 2);
+
+    buttonByText(wrapper, 'Edit').props().onClick();
+    wrapper.update();
+
+    assert.lengthOf(wrapper.find('[role="dialog"] TagCombobox'), 2);
+  });
+
+  it('suggests relationship types and filters the manual edge list', () => {
+    const semanticState = emptyNodeLinkState({
+      tagEdges: [
+        {
+          id: 'edge-character-action',
+          sourceTag: 'Character',
+          targetTag: 'Action',
+          connectionType: 'explains',
+        },
+        {
+          id: 'edge-action-character',
+          sourceTag: 'Action',
+          targetTag: 'Character',
+          connectionType: 'supports',
+        },
+      ],
+    });
+    const { wrapper } = createComponent({ semanticState });
+    const relationshipInput = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'new-edge-relationship');
+    const edgeFilter = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'manual-edge-filter');
+
+    assert.deepEqual(relationshipInput.prop('options'), [
+      'explains',
+      'supports',
+    ]);
+
+    edgeFilter.props().onChange('supports');
+    wrapper.update();
+
+    assert.include(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'supports',
+    );
+    assert.notInclude(
+      wrapper.find('[data-testid="manual-edge-list"]').text(),
+      'explains',
+    );
+    assert.include(wrapper.text(), '1/2');
+  });
+});
+
+describe('ManualEdgeViewport', () => {
+  function createComponent({ selectedTag = '' } = {}) {
+    const graph = {
+      tags: ['Action', 'Character', 'Theme', 'Setting'].map(tagNode),
+      quotes: [],
+      documents: [],
+      manualEdges: [
+        {
+          id: 'setting-character',
+          sourceTag: 'Setting',
+          targetTag: 'Character',
+          connectionType: 'contains',
+        },
+        {
+          id: 'action-theme',
+          sourceTag: 'Action',
+          targetTag: 'Theme',
+          connectionType: 'shapes',
+        },
+      ],
+      annotationCount: 0,
+    };
+    return mount(
+      <ManualEdgeViewport
+        graph={graph}
+        spotlightTag=""
+        selectedTag={selectedTag}
+        selectedEdgeId=""
+        tagColors={{}}
+        onSelectEdge={sinon.stub()}
+      />,
+    );
+  }
+
+  function listedEdgeIds(wrapper) {
+    return wrapper
+      .find('[data-testid="manual-edge-viewport-list"] li')
+      .map(item => item.prop('data-edge-id'));
+  }
+
+  it('puts relationships connected to the selected tag first', () => {
+    const wrapper = createComponent({ selectedTag: 'Character' });
+
+    assert.deepEqual(listedEdgeIds(wrapper), [
+      'setting-character',
+      'action-theme',
+    ]);
+    assert.include(
+      wrapper.find('li[data-edge-id="action-theme"] button').prop('className'),
+      'opacity-50',
+    );
+  });
+
+  it('filters and sorts manual relationships in the large viewport', () => {
+    const wrapper = createComponent();
+    const filter = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'manual-edge-viewport-filter');
+
+    filter.props().onChange('shapes');
+    wrapper.update();
+    assert.deepEqual(listedEdgeIds(wrapper), ['action-theme']);
+
+    filter.props().onChange('');
+    wrapper
+      .find('select[aria-label="Sort manual relationships"]')
+      .props()
+      .onChange({ target: { value: 'target' } });
+    wrapper.update();
+
+    assert.deepEqual(listedEdgeIds(wrapper), [
+      'setting-character',
+      'action-theme',
+    ]);
   });
 });
 
@@ -199,7 +332,9 @@ describe('NodeLinkGraphPage', () => {
       .first()
       .props()
       .onChange({ target: { value: 'private-group' } });
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitFor(() =>
+      fakeNodeLinkState.fetchGroupAnnotations.calledWith('private-group'),
+    );
     wrapper.update();
 
     assert.equal(wrapper.find('select').first().prop('value'), 'private-group');
@@ -236,76 +371,282 @@ describe('NodeLinkGraphPage', () => {
     assert.calledWith(fakeNodeLinkState.fetchGroupAnnotations, 'private-group');
   });
 
-  it('filters the rendered graph to one document without refetching group annotations', async () => {
-    fakeStore.focusedGroupId.returns('private-group');
-    fakeStore.routeParams.returns({
-      group: 'private-group',
-      uri: 'https://example.com/launch-doc',
-    });
+  it('keeps graph editing in place when a tag is selected', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
-        id: 'ann-doc-a',
-        uri: 'https://example.com/doc-a',
-        exact: 'Evidence from document A',
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
         tags: ['Character'],
       }),
-      evidenceAnnotation({
-        id: 'ann-doc-b',
-        uri: 'https://example.com/doc-b',
-        exact: 'Evidence from document B',
-        tags: ['Action'],
-      }),
-      {
-        ...evidenceAnnotation({
-          id: 'hidden-ann-doc-a',
-          uri: 'https://example.com/doc-a',
-          exact: 'Hidden evidence from document A',
-          tags: ['Hidden Tag'],
-        }),
-        hidden: true,
-      },
     ]);
-    fakeNodeLinkState.loadState.callsFake(groupId =>
-      Promise.resolve({
-        status: 'missing',
-        state: emptyNodeLinkState({
-          selectedGroupId: groupId,
-          descriptiveTags: [{ id: 'desc-hidden', tag: 'Hidden Description' }],
-          tagEdges: [
-            {
-              sourceTag: 'Hidden Tag',
-              targetTag: 'Hidden Description',
-              connectionType: 'explains',
-            },
-          ],
-        }),
-        annotationId: null,
-        stateUri: `https://hypothesis-node-link.local/state/group/${groupId}`,
-      }),
-    );
-
     const wrapper = createComponent();
 
     await waitFor(() => {
       wrapper.update();
-      return wrapper.text().includes('3 tags, 2 documents');
+      return wrapper.find('g[role="button"]').length > 0;
     });
 
-    const documentSelect = wrapper.find('select').at(1);
-    assert.equal(documentSelect.prop('value'), '');
-    assert.include(documentSelect.text(), 'All');
+    const nodeFinder = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'node-link-spotlight');
+    assert.deepEqual(nodeFinder.prop('options'), ['Character']);
 
-    documentSelect.props().onChange({
-      target: { value: 'https://example.com/doc-a' },
+    wrapper.find('#node-link-editor-tab').props().onClick();
+    wrapper.update();
+
+    const relationshipInput = wrapper.find('input[placeholder="relationship"]');
+    relationshipInput.props().onInput({
+      currentTarget: { value: 'supports' },
+      target: { value: 'supports' },
+    });
+    wrapper.update();
+
+    const detailsPanel = wrapper.find('#node-link-details-panel').getDOMNode();
+    detailsPanel.scrollTo = sinon.stub();
+    const preventDefault = sinon.stub();
+
+    wrapper.find('g[role="button"]').first().props().onKeyDown({
+      key: 'Enter',
+      preventDefault,
     });
 
     await waitFor(() => {
       wrapper.update();
-      return wrapper.text().includes('1 tags, 1 documents');
+      return wrapper
+        .find('[data-testid="node-link-selection-summary"]')
+        .text()
+        .includes('Character');
     });
 
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Tag');
-    assert.notInclude(wrapper.find('main').text(), 'Hidden Description');
-    assert.calledOnce(fakeNodeLinkState.fetchGroupAnnotations);
+    assert.calledOnce(preventDefault);
+    assert.isTrue(wrapper.find('#node-link-editor-tab').prop('aria-selected'));
+    assert.isTrue(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.notCalled(detailsPanel.scrollTo);
+    assert.equal(
+      wrapper.find('input[placeholder="relationship"]').prop('value'),
+      'supports',
+    );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'View details')
+      .first()
+      .props()
+      .onClick();
+
+    await waitFor(() => detailsPanel.scrollTo.called);
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('#node-link-details-tab').prop('aria-selected'));
+    assert.isFalse(wrapper.find('#node-link-details-panel').prop('hidden'));
+    assert.include(
+      wrapper.find('#node-link-details-panel').text(),
+      'Character',
+    );
+    assert.calledWith(detailsPanel.scrollTo, { top: 0 });
+  });
+
+  it('isolates and centers a selected tag neighborhood', async () => {
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
+        tags: ['Character'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-action',
+        uri: 'https://example.com/doc',
+        exact: 'Action evidence',
+        tags: ['Action'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-theme',
+        uri: 'https://example.com/doc',
+        exact: 'Theme evidence',
+        tags: ['Theme'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-setting',
+        uri: 'https://example.com/doc',
+        exact: 'Setting evidence',
+        tags: ['Setting'],
+      }),
+    ]);
+    fakeNodeLinkState.loadState.resolves({
+      status: 'loaded',
+      state: emptyNodeLinkState({
+        selectedGroupId: '__world__',
+        tagEdges: [
+          {
+            id: 'character-action',
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+          {
+            id: 'theme-character',
+            sourceTag: 'Theme',
+            targetTag: 'Character',
+            connectionType: 'shapes',
+          },
+          {
+            id: 'action-setting',
+            sourceTag: 'Action',
+            targetTag: 'Setting',
+            connectionType: 'occurs in',
+          },
+        ],
+      }),
+      annotationId: 'state-ann',
+      stateUri: 'https://hypothesis-node-link.local/state/group/__world__',
+    });
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 4;
+    });
+
+    const spotlight = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'node-link-spotlight');
+    spotlight.props().onChange('Character');
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 3;
+    });
+
+    assert.include(wrapper.text(), '3 of 4 tags shown around Character');
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Clear spotlight')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.lengthOf(wrapper.find('g[role="button"]'), 4);
+  });
+
+  it('toggles the main viewport and auto-hides the sidebar for tag overview', async () => {
+    fakeStore.tagInventorySchemaTagColors.returns({
+      Action: 'rgba(80, 160, 96, 0.38)',
+      Character: 'rgba(80, 160, 96, 0.38)',
+    });
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
+        tags: ['Character'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-action',
+        uri: 'https://example.com/doc',
+        exact: 'Action evidence',
+        tags: ['Action'],
+      }),
+    ]);
+    fakeNodeLinkState.loadState.resolves({
+      status: 'loaded',
+      state: emptyNodeLinkState({
+        selectedGroupId: '__world__',
+        tagEdges: [
+          {
+            id: 'character-action',
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+        ],
+      }),
+      annotationId: 'state-ann',
+      stateUri: 'https://hypothesis-node-link.local/state/group/__world__',
+    });
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 2;
+    });
+
+    const sidebar = () => wrapper.find('[data-testid="node-link-sidebar"]');
+    const sidebarToggle = () =>
+      wrapper.find('[data-testid="node-link-sidebar-toggle"]');
+    const graphNodeColor = tag =>
+      wrapper
+        .find('g[role="button"]')
+        .filterWhere(node => node.text().includes(tag))
+        .first()
+        .find('rect')
+        .prop('fill');
+
+    assert.isFalse(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Hide sidebar');
+    assert.notEqual(graphNodeColor('Action'), graphNodeColor('Character'));
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Manual relationships')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isTrue(
+      wrapper.find('[data-testid="manual-edge-viewport-list"]').exists(),
+    );
+    assert.isFalse(
+      wrapper.find('svg[aria-label="Tag relationship graph"]').exists(),
+    );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Tag overview')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('[data-testid="tag-overview"]').exists());
+    assert.lengthOf(wrapper.find('[data-testid="tag-overview"] tbody tr'), 2);
+    assert.notEqual(
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Action"]')
+        .first()
+        .prop('style').backgroundColor,
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Character"]')
+        .first()
+        .prop('style').backgroundColor,
+    );
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Graph')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
   });
 });

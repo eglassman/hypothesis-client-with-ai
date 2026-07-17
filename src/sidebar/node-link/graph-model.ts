@@ -234,9 +234,191 @@ export function colorForTag(
   tagColors: Record<string, string> = {},
 ) {
   const normalizedTag = tag.trim();
-  return rgbaStringToHexColorInput(
-    tagColors[normalizedTag] ?? highlightRgbaFromString(normalizedTag),
+  const color =
+    tagColors[normalizedTag] ?? highlightRgbaFromString(normalizedTag);
+  const hexMatch = color.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1].toLowerCase();
+    return hex.length === 3
+      ? `#${[...hex].map(channel => channel.repeat(2)).join('')}`
+      : `#${hex}`;
+  }
+  return rgbaStringToHexColorInput(color);
+}
+
+function nearbyShade(hex: string, variantIndex: number) {
+  const value = parseInt(hex.slice(1), 16);
+  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  const lighten = variantIndex % 2 === 0;
+  const amount = Math.min(0.08 * (Math.floor(variantIndex / 2) + 1), 0.8);
+  const target = lighten ? 255 : 0;
+  const adjusted = channels.map(channel =>
+    Math.round(channel + (target - channel) * amount),
   );
+  return `#${adjusted
+    .map(channel => channel.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/**
+ * Resolve tag colors so tags with the same display color get nearby shades.
+ *
+ * The result is stable regardless of input order and reserves all configured
+ * colors before choosing variants, so a generated shade does not collide with
+ * another tag's configured color.
+ */
+export function distinctTagColors(
+  tags: readonly string[],
+  tagColors: Record<string, string> = {},
+) {
+  const normalizedTags = [
+    ...new Set(
+      [...Object.keys(tagColors), ...tags]
+        .map(tag => tag.trim())
+        .filter(Boolean),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  const baseColors = new Map(
+    normalizedTags.map(tag => [tag, colorForTag(tag, tagColors)]),
+  );
+  const colorCounts = new Map<string, number>();
+  for (const color of baseColors.values()) {
+    colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+  }
+
+  const usedColors = new Set(baseColors.values());
+  const resolvedColors: Record<string, string> = {};
+  for (const tag of normalizedTags) {
+    const baseColor = baseColors.get(tag)!;
+    if (colorCounts.get(baseColor) === 1) {
+      resolvedColors[tag] = baseColor;
+      continue;
+    }
+
+    for (let variantIndex = 0; variantIndex < 40; variantIndex++) {
+      const candidate = nearbyShade(baseColor, variantIndex);
+      if (!usedColors.has(candidate)) {
+        resolvedColors[tag] = candidate;
+        usedColors.add(candidate);
+        break;
+      }
+    }
+    resolvedColors[tag] ??= baseColor;
+  }
+  return resolvedColors;
+}
+
+/** Return the selected tag, its immediate neighbors and their connecting edges. */
+export function spotlightNodeLinkGraph(
+  graph: NodeLinkGraph,
+  spotlightTag: string,
+): NodeLinkGraph {
+  if (!spotlightTag || !graph.tags.some(tag => tag.tag === spotlightTag)) {
+    return graph;
+  }
+
+  const manualEdges = graph.manualEdges.filter(
+    edge => edge.sourceTag === spotlightTag || edge.targetTag === spotlightTag,
+  );
+  const visibleTags = new Set([spotlightTag]);
+  for (const edge of manualEdges) {
+    visibleTags.add(edge.sourceTag);
+    visibleTags.add(edge.targetTag);
+  }
+  const tags = graph.tags.filter(tag => visibleTags.has(tag.tag));
+  const documentUris = new Set(tags.flatMap(tag => tag.documentUris));
+
+  return {
+    ...graph,
+    tags,
+    manualEdges,
+    quotes: graph.quotes.filter(quote =>
+      quote.tags.some(tag => visibleTags.has(tag)),
+    ),
+    documents: graph.documents.filter(document =>
+      documentUris.has(document.uri),
+    ),
+  };
+}
+
+/** Arrange a one-hop neighborhood with the selected tag fixed at the center. */
+export function buildSpotlightGraphLayout(
+  graph: NodeLinkGraph,
+  spotlightTag: string,
+  tagColors: Record<string, string> = {},
+): TagGraphLayout {
+  const focusNode = graph.tags.find(tag => tag.tag === spotlightTag);
+  if (!focusNode) {
+    return buildTagGraphLayout(graph, tagColors);
+  }
+
+  const outgoingTags = new Set(
+    graph.manualEdges
+      .filter(
+        edge =>
+          edge.sourceTag === spotlightTag && edge.targetTag !== spotlightTag,
+      )
+      .map(edge => edge.targetTag),
+  );
+  const incomingTags = new Set(
+    graph.manualEdges
+      .filter(
+        edge =>
+          edge.targetTag === spotlightTag &&
+          edge.sourceTag !== spotlightTag &&
+          !outgoingTags.has(edge.sourceTag),
+      )
+      .map(edge => edge.sourceTag),
+  );
+  const remainingTags = graph.tags
+    .map(tag => tag.tag)
+    .filter(
+      tag =>
+        tag !== spotlightTag &&
+        !outgoingTags.has(tag) &&
+        !incomingTags.has(tag),
+    );
+  for (const tag of remainingTags) {
+    outgoingTags.add(tag);
+  }
+
+  const leftTags = [...incomingTags].sort((a, b) => a.localeCompare(b));
+  const rightTags = [...outgoingTags].sort((a, b) => a.localeCompare(b));
+  const maxRows = Math.max(leftTags.length, rightTags.length, 1);
+  const width = 1040;
+  const height = Math.max(620, (maxRows - 1) * TAG_LAYOUT_ROW_GAP + 200);
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const tagByName = new Map(graph.tags.map(tag => [tag.tag, tag]));
+  const nodes: TagLayoutNode[] = [
+    {
+      ...focusNode,
+      x: centerX,
+      y: centerY,
+      color: colorForTag(focusNode.tag, tagColors),
+    },
+  ];
+
+  const addSide = (tags: string[], x: number) => {
+    const firstY = centerY - ((tags.length - 1) * TAG_LAYOUT_ROW_GAP) / 2;
+    tags.forEach((tag, index) => {
+      const tagNode = tagByName.get(tag);
+      if (!tagNode) {
+        return;
+      }
+      nodes.push({
+        ...tagNode,
+        x,
+        y: Math.round(firstY + index * TAG_LAYOUT_ROW_GAP),
+        color: colorForTag(tag, tagColors),
+      });
+    });
+  };
+
+  addSide(leftTags, 190);
+  addSide(rightTags, width - 190);
+
+  return { width, height, nodes };
 }
 
 /**

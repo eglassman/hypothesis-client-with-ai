@@ -1,7 +1,7 @@
 import { Button, Card, CloseButton } from '@hypothesis/frontend-shared';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 
-import { colorForTag } from '../../node-link/graph-model';
+import { colorForTag, distinctTagColors } from '../../node-link/graph-model';
 import {
   emptyNodeLinkState,
   relationshipsForTag,
@@ -14,6 +14,7 @@ import type {
 import { withServices } from '../../service-context';
 import type { NodeLinkStateService } from '../../services/node-link-state';
 import { useSidebarStore } from '../../store';
+import { SearchableCombobox } from '../SearchableCombobox';
 import SidebarPanel from '../SidebarPanel';
 
 type LoadStatus =
@@ -110,7 +111,7 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   const groupId = store.focusedGroupId();
   const focusedGroup = store.focusedGroup();
   const annotations = store.savedAnnotations();
-  const tagColors = store.tagInventorySchemaTagColors();
+  const schemaTagColors = store.tagInventorySchemaTagColors();
 
   const [status, setStatus] = useState<LoadStatus>('idle');
   const [message, setMessage] = useState('');
@@ -161,6 +162,10 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   const tags = useMemo(
     () => tagsForNodeLinkState(state, annotations, groupId),
     [annotations, groupId, state],
+  );
+  const tagColors = useMemo(
+    () => distinctTagColors(tags, schemaTagColors),
+    [schemaTagColors, tags],
   );
 
   useEffect(() => {
@@ -221,21 +226,19 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   } else {
     content = (
       <div className="space-y-4">
-        <label className="block text-sm font-medium text-color-text">
+        <label
+          className="block text-sm font-medium text-color-text"
+          htmlFor="tag-reference-selector"
+        >
           <span className="mb-1 block">Tag</span>
-          <select
-            className="w-full rounded border border-grey-4 bg-white px-2 py-1.5 text-sm"
+          <SearchableCombobox
+            id="tag-reference-selector"
+            ariaLabel="Tag"
+            options={tags}
             value={selectedTag}
-            onChange={event =>
-              setSelectedTag((event.target as HTMLSelectElement).value)
-            }
-          >
-            {tags.map(tag => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
+            onChange={setSelectedTag}
+            placeholder="Find a tag"
+          />
         </label>
         <RelationshipSection
           title="Outgoing"

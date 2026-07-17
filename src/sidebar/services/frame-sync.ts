@@ -989,6 +989,27 @@ export class FrameSyncService {
     });
   }
 
+  /**
+   * Read visible HTML text from the guest frame.
+   * Used when Claude cannot download a paywalled or auth-gated HTML URL.
+   */
+  async getDocumentText(): Promise<string> {
+    const guest = this._guestRPC.get(null);
+    if (!guest) {
+      throw new Error('No guest connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      guest.call('getDocumentText', result => {
+        if (result.ok) {
+          resolve(result.value);
+        } else {
+          reject(new Error(result.error));
+        }
+      });
+    });
+  }
+
   // Only used to cleanup tests
   destroy() {
     this._portFinder.destroy();

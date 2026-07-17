@@ -6,8 +6,10 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Annotation, Group } from '../../../types/api';
 import {
   buildNodeLinkGraph,
+  buildSpotlightGraphLayout,
   buildTagGraphLayout,
-  colorForTag,
+  distinctTagColors,
+  spotlightNodeLinkGraph,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
 import {
@@ -27,10 +29,17 @@ import type { NodeLinkStateService } from '../../services/node-link-state';
 import type { SessionService } from '../../services/session';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
+import { SearchableCombobox } from '../SearchableCombobox';
+import { RelationshipSentence, TagBadge } from './RelationshipSentence';
+import { TagCombobox } from './TagCombobox';
+import { TagOverviewViewport } from './TagOverviewViewport';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type AddMode = 'edge' | 'tag';
+type SidebarView = 'details' | 'edit';
+type ViewportView = 'graph' | 'edges' | 'overview';
+type ManualEdgeSort = 'source' | 'target' | 'relationship';
 type PendingDelete =
   | { type: 'edge'; id: string }
   | { type: 'tag'; id: string }
@@ -261,40 +270,6 @@ function splitTagLines(tag: string) {
   );
 }
 
-function TagBadge({
-  tag,
-  tagColors,
-}: {
-  tag: string;
-  tagColors: Record<string, string>;
-}) {
-  return (
-    <span
-      className="inline-block max-w-full truncate rounded-full px-2.5 py-0.5 font-bold text-white"
-      style={{ backgroundColor: colorForTag(tag, tagColors) }}
-      title={tag}
-    >
-      {tag}
-    </span>
-  );
-}
-
-function RelationshipSentence({
-  edge,
-  tagColors,
-}: {
-  edge: ManualTagEdge;
-  tagColors: Record<string, string>;
-}) {
-  return (
-    <span className="inline-flex max-w-full flex-wrap items-center gap-2">
-      <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
-      <strong>{edge.connectionType}</strong>
-      <TagBadge tag={edge.targetTag} tagColors={tagColors} />
-    </span>
-  );
-}
-
 function EditorActionButton({
   children,
   disabled = false,
@@ -460,6 +435,7 @@ function TagNode({
 
 function GraphCanvas({
   graph,
+  spotlightTag,
   selectedTag,
   selectedEdgeId,
   tagColors,
@@ -468,6 +444,7 @@ function GraphCanvas({
   onClearSelection,
 }: {
   graph: NodeLinkGraph;
+  spotlightTag: string;
   selectedTag: string;
   selectedEdgeId: string;
   tagColors: Record<string, string>;
@@ -485,29 +462,42 @@ function GraphCanvas({
   const [nodePositions, setNodePositions] = useState<
     Record<string, GraphPoint>
   >({});
-  const layout = useMemo(
-    () => buildTagGraphLayout(graph, tagColors),
-    [graph, tagColors],
+  const [spotlightNodePositions, setSpotlightNodePositions] = useState<
+    Record<string, GraphPoint>
+  >({});
+  const visibleGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
   );
+  const layout = useMemo(
+    () =>
+      spotlightTag
+        ? buildSpotlightGraphLayout(visibleGraph, spotlightTag, tagColors)
+        : buildTagGraphLayout(visibleGraph, tagColors),
+    [spotlightTag, tagColors, visibleGraph],
+  );
+  const activeNodePositions = spotlightTag
+    ? spotlightNodePositions
+    : nodePositions;
   const layoutNodes = useMemo(
     () =>
       layout.nodes.map(node => {
-        const moved = nodePositions[node.tag];
+        const moved = activeNodePositions[node.tag];
         return moved ? { ...node, x: moved.x, y: moved.y } : node;
       }),
-    [layout.nodes, nodePositions],
+    [activeNodePositions, layout.nodes],
   );
   const nodeByTag = new Map(layoutNodes.map(node => [node.tag, node]));
   const relationshipCountByTag = useMemo(() => {
-    const counts = new Map(graph.tags.map(node => [node.tag, 0]));
-    for (const edge of graph.manualEdges) {
+    const counts = new Map(visibleGraph.tags.map(node => [node.tag, 0]));
+    for (const edge of visibleGraph.manualEdges) {
       counts.set(edge.sourceTag, (counts.get(edge.sourceTag) || 0) + 1);
       counts.set(edge.targetTag, (counts.get(edge.targetTag) || 0) + 1);
     }
     return counts;
-  }, [graph.manualEdges, graph.tags]);
+  }, [visibleGraph.manualEdges, visibleGraph.tags]);
   const selectedEdge = selectedEdgeId
-    ? graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId)
+    ? visibleGraph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId)
     : undefined;
   const relatedTags = new Set<string>();
   if (selectedEdge) {
@@ -515,7 +505,7 @@ function GraphCanvas({
     relatedTags.add(selectedEdge.targetTag);
   } else if (selectedTag) {
     relatedTags.add(selectedTag);
-    for (const edge of graph.manualEdges) {
+    for (const edge of visibleGraph.manualEdges) {
       if (edge.sourceTag === selectedTag) {
         relatedTags.add(edge.targetTag);
       } else if (edge.targetTag === selectedTag) {
@@ -526,7 +516,7 @@ function GraphCanvas({
 
   useEffect(() => {
     setNodePositions(current => {
-      const validTags = new Set(layout.nodes.map(node => node.tag));
+      const validTags = new Set(graph.tags.map(node => node.tag));
       const next = Object.fromEntries(
         Object.entries(current).filter(([tag]) => validTags.has(tag)),
       );
@@ -534,7 +524,12 @@ function GraphCanvas({
         ? current
         : next;
     });
-  }, [layout.nodes]);
+  }, [graph.tags]);
+
+  useEffect(() => {
+    setSpotlightNodePositions({});
+    setUserZoomed(false);
+  }, [spotlightTag]);
 
   useEffect(() => {
     if (userZoomed || !scrollRef.current) {
@@ -543,6 +538,26 @@ function GraphCanvas({
     const availableWidth = Math.max(320, scrollRef.current.clientWidth - 36);
     setZoom(clamp(Math.min(1, availableWidth / layout.width), MIN_ZOOM, 1));
   }, [layout.width, userZoomed]);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) {
+      return;
+    }
+    if (!spotlightTag) {
+      container.scrollLeft = 0;
+      container.scrollTop = 0;
+      return;
+    }
+    container.scrollLeft = Math.max(
+      0,
+      (layout.width * zoom - container.clientWidth) / 2,
+    );
+    container.scrollTop = Math.max(
+      0,
+      (layout.height * zoom - container.clientHeight) / 2,
+    );
+  }, [layout.height, layout.width, spotlightTag, zoom]);
 
   const graphPoint = (
     event: Pick<PointerEvent | WheelEvent, 'clientX' | 'clientY'>,
@@ -619,7 +634,10 @@ function GraphCanvas({
       Math.abs(point.x - drag.startX) > 4 ||
       Math.abs(point.y - drag.startY) > 4;
     dragRef.current = { ...drag, moved };
-    setNodePositions(current => ({
+    const setPositions = spotlightTag
+      ? setSpotlightNodePositions
+      : setNodePositions;
+    setPositions(current => ({
       ...current,
       [drag.tag]: {
         x: clamp(
@@ -649,6 +667,15 @@ function GraphCanvas({
     }
   };
 
+  const resetLayout = () => {
+    if (spotlightTag) {
+      setSpotlightNodePositions({});
+    } else {
+      setNodePositions({});
+    }
+    fitZoom();
+  };
+
   return (
     <div className="relative min-h-0 overflow-hidden rounded border bg-[#f7faf9]">
       <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded border bg-white/95 p-1 shadow-sm">
@@ -667,6 +694,14 @@ function GraphCanvas({
           onClick={fitZoom}
         >
           Fit
+        </button>
+        <button
+          className="h-8 rounded px-2 text-xs font-bold hover:bg-grey-2"
+          type="button"
+          title="Reset node positions and re-layout graph"
+          onClick={resetLayout}
+        >
+          Re-layout
         </button>
         <button
           className="h-8 min-w-8 rounded px-2 text-sm font-bold hover:bg-grey-2"
@@ -730,7 +765,7 @@ function GraphCanvas({
             fill="#f7faf9"
             onClick={onClearSelection}
           />
-          {graph.manualEdges.map((edge, index) => {
+          {visibleGraph.manualEdges.map((edge, index) => {
             const source = nodeByTag.get(edge.sourceTag);
             const target = nodeByTag.get(edge.targetTag);
             if (!source || !target) {
@@ -817,6 +852,175 @@ function GraphCanvas({
         </svg>
       </div>
     </div>
+  );
+}
+
+function edgeTouchesTag(edge: ManualTagEdge, tag: string) {
+  return edge.sourceTag === tag || edge.targetTag === tag;
+}
+
+function compareManualEdges(
+  a: ManualTagEdge,
+  b: ManualTagEdge,
+  sortBy: ManualEdgeSort,
+) {
+  const fields: Array<'sourceTag' | 'targetTag' | 'connectionType'> =
+    sortBy === 'target'
+      ? ['targetTag', 'sourceTag', 'connectionType']
+      : sortBy === 'relationship'
+        ? ['connectionType', 'sourceTag', 'targetTag']
+        : ['sourceTag', 'targetTag', 'connectionType'];
+  for (const field of fields) {
+    const comparison = String(a[field]).localeCompare(String(b[field]));
+    if (comparison) {
+      return comparison;
+    }
+  }
+  return edgeId(a).localeCompare(edgeId(b));
+}
+
+export function ManualEdgeViewport({
+  graph,
+  spotlightTag,
+  selectedTag,
+  selectedEdgeId,
+  tagColors,
+  onSelectEdge,
+}: {
+  graph: NodeLinkGraph;
+  spotlightTag: string;
+  selectedTag: string;
+  selectedEdgeId: string;
+  tagColors: Record<string, string>;
+  onSelectEdge: (edgeId: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState<ManualEdgeSort>('source');
+  const visibleGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
+  );
+  const filterOptions = useMemo(
+    () =>
+      [
+        ...visibleGraph.tags.map(tag => tag.tag),
+        ...visibleGraph.manualEdges.map(edge => edge.connectionType),
+      ]
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .sort((a, b) => a.localeCompare(b)),
+    [visibleGraph.manualEdges, visibleGraph.tags],
+  );
+  const edges = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return [...visibleGraph.manualEdges]
+      .filter(edge =>
+        [edge.sourceTag, edge.connectionType, edge.targetTag].some(value =>
+          value.toLocaleLowerCase().includes(normalizedQuery),
+        ),
+      )
+      .sort((a, b) => {
+        if (selectedTag) {
+          const aConnected = edgeTouchesTag(a, selectedTag);
+          const bConnected = edgeTouchesTag(b, selectedTag);
+          if (aConnected !== bConnected) {
+            return aConnected ? -1 : 1;
+          }
+        }
+        return compareManualEdges(a, b, sortBy);
+      });
+  }, [query, selectedTag, sortBy, visibleGraph.manualEdges]);
+
+  useEffect(() => setQuery(''), [spotlightTag]);
+
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded border bg-white">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b bg-grey-1 p-3">
+        <label
+          className="grid min-w-[240px] flex-1 gap-1 text-sm font-medium"
+          htmlFor="manual-edge-viewport-filter"
+        >
+          <span>Filter relationships</span>
+          <SearchableCombobox
+            id="manual-edge-viewport-filter"
+            ariaLabel="Filter manual relationships"
+            options={filterOptions}
+            value={query}
+            allowCustomValue
+            placeholder="Tag or relationship"
+            onChange={setQuery}
+          />
+        </label>
+        <label className="grid gap-1 text-sm font-medium">
+          <span>Sort by</span>
+          <select
+            className="h-9 rounded border bg-white px-2 text-sm"
+            value={sortBy}
+            aria-label="Sort manual relationships"
+            onChange={event =>
+              setSortBy(
+                (event.target as HTMLSelectElement).value as ManualEdgeSort,
+              )
+            }
+          >
+            <option value="source">Source tag</option>
+            <option value="target">Target tag</option>
+            <option value="relationship">Relationship</option>
+          </select>
+        </label>
+        <span className="pb-2 text-xs font-bold text-grey-6">
+          {edges.length}/{visibleGraph.manualEdges.length}
+        </span>
+      </header>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_minmax(0,1fr)] gap-3 border-b bg-white px-4 py-2 text-xs font-bold uppercase text-grey-6">
+        <span>Source</span>
+        <span>Relationship</span>
+        <span>Target</span>
+      </div>
+
+      {edges.length ? (
+        <ul
+          className="min-h-0 flex-1 divide-y overflow-auto"
+          data-testid="manual-edge-viewport-list"
+        >
+          {edges.map(edge => {
+            const id = edgeId(edge);
+            const connected = !selectedTag || edgeTouchesTag(edge, selectedTag);
+            return (
+              <li key={id} data-edge-id={id}>
+                <button
+                  className={classnames(
+                    'grid w-full grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_minmax(0,1fr)] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-grey-1 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                    {
+                      'bg-brand/10': selectedEdgeId === id,
+                      'opacity-50 hover:opacity-100': !connected,
+                    },
+                  )}
+                  type="button"
+                  aria-pressed={selectedEdgeId === id}
+                  aria-label={`${edge.sourceTag} ${edge.connectionType} ${edge.targetTag}`}
+                  onClick={() => onSelectEdge(id)}
+                >
+                  <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
+                  <strong className="min-w-0 break-words text-sm">
+                    {edge.connectionType}
+                  </strong>
+                  <TagBadge tag={edge.targetTag} tagColors={tagColors} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="grid min-h-0 flex-1 place-items-center p-8 text-sm text-grey-6">
+          {visibleGraph.manualEdges.length
+            ? 'No manual relationships match this filter.'
+            : spotlightTag
+              ? 'This tag has no manual relationships.'
+              : 'No manual relationships have been added yet.'}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1040,6 +1244,7 @@ export function NodeLinkEditor({
   const [addMode, setAddMode] = useState<AddMode>('edge');
   const [pendingDelete, setPendingDelete] = useState<PendingDelete>(null);
   const [formMessage, setFormMessage] = useState('');
+  const [edgeFilter, setEdgeFilter] = useState('');
 
   useEffect(() => {
     if (!edgeSource && selectedTag && tags.includes(selectedTag)) {
@@ -1306,9 +1511,27 @@ export function NodeLinkEditor({
   };
 
   const canEdit = tags.length > 1;
+  const relationshipOptions = Array.from(
+    new Set(
+      semanticState.tagEdges
+        .map(edge => edge.connectionType.trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+  const edgeFilterOptions = Array.from(
+    new Set([...tags, ...relationshipOptions]),
+  ).sort((a, b) => a.localeCompare(b));
+  const normalizedEdgeFilter = edgeFilter.trim().toLocaleLowerCase();
+  const filteredManualEdges = normalizedEdgeFilter
+    ? semanticState.tagEdges.filter(edge =>
+        [edge.sourceTag, edge.connectionType, edge.targetTag].some(value =>
+          value.toLocaleLowerCase().includes(normalizedEdgeFilter),
+        ),
+      )
+    : semanticState.tagEdges;
 
   return (
-    <div className="space-y-5 border-t pt-5">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-bold uppercase text-grey-6">Edit graph</h3>
         <span
@@ -1371,45 +1594,34 @@ export function NodeLinkEditor({
         {addMode === 'edge' ? (
           <div className="space-y-3">
             <div className="grid gap-2">
-              <select
-                className="h-9 rounded border bg-white px-2 text-sm"
+              <TagCombobox
+                id="new-edge-source-tag"
+                ariaLabel="Source tag"
+                options={tags}
                 value={edgeSource}
                 disabled={!canEdit}
-                onChange={event =>
-                  setEdgeSource((event.target as HTMLSelectElement).value)
-                }
-              >
-                <option value="">Source tag</option>
-                {tags.map(tag => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="h-9 rounded border px-2 text-sm"
+                placeholder="Source tag"
+                onChange={setEdgeSource}
+              />
+              <SearchableCombobox
+                id="new-edge-relationship"
+                ariaLabel="Relationship"
+                options={relationshipOptions}
+                allowCustomValue
                 value={edgeRelationship}
                 disabled={!canEdit}
                 placeholder="relationship"
-                onInput={event =>
-                  setEdgeRelationship((event.target as HTMLInputElement).value)
-                }
+                onChange={setEdgeRelationship}
               />
-              <select
-                className="h-9 rounded border bg-white px-2 text-sm"
+              <TagCombobox
+                id="new-edge-target-tag"
+                ariaLabel="Target tag"
+                options={tags}
                 value={edgeTarget}
                 disabled={!canEdit}
-                onChange={event =>
-                  setEdgeTarget((event.target as HTMLSelectElement).value)
-                }
-              >
-                <option value="">Target tag</option>
-                {tags.map(tag => (
-                  <option key={tag} value={tag}>
-                    {tag}
-                  </option>
-                ))}
-              </select>
+                placeholder="Target tag"
+                onChange={setEdgeTarget}
+              />
             </div>
             <div className="flex gap-2">
               <Button
@@ -1444,7 +1656,12 @@ export function NodeLinkEditor({
 
       <section className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-sm font-bold">Manual edges</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-bold">Manual edges</h4>
+            <span className="rounded-full bg-grey-2 px-2 py-0.5 text-xs font-bold text-grey-6">
+              {filteredManualEdges.length}/{semanticState.tagEdges.length}
+            </span>
+          </div>
           <Button
             onClick={exportLegend}
             disabled={!semanticState.tagEdges.length}
@@ -1453,54 +1670,89 @@ export function NodeLinkEditor({
             Export
           </Button>
         </div>
+        {semanticState.tagEdges.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <SearchableCombobox
+                id="manual-edge-filter"
+                ariaLabel="Filter manual edges"
+                options={edgeFilterOptions}
+                allowCustomValue
+                value={edgeFilter}
+                placeholder="Filter by tag or relationship"
+                onChange={setEdgeFilter}
+              />
+            </div>
+            {edgeFilter && (
+              <button
+                className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+                type="button"
+                onClick={() => setEdgeFilter('')}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
         {semanticState.tagEdges.length ? (
-          <ul className="max-h-52 space-y-2 overflow-auto pr-1">
-            {semanticState.tagEdges.map(edge => {
-              const id = edgeId(edge);
-              const confirmingDelete =
-                pendingDelete?.type === 'edge' && pendingDelete.id === id;
-              return (
-                <li className="rounded border px-3 py-2 text-sm" key={id}>
-                  <div className="leading-6">
-                    <RelationshipSentence edge={edge} tagColors={tagColors} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {confirmingDelete ? (
-                      <>
-                        <span className="text-xs font-bold text-red-6">
-                          Confirm delete?
-                        </span>
-                        <EditorActionButton
-                          variant="danger"
-                          onClick={() => deleteEdge(edge)}
-                        >
-                          Yes
-                        </EditorActionButton>
-                        <EditorActionButton
-                          variant="secondary"
-                          onClick={() => setPendingDelete(null)}
-                        >
-                          No
-                        </EditorActionButton>
-                      </>
-                    ) : (
-                      <>
-                        <EditorActionButton onClick={() => editEdge(edge)}>
-                          Edit
-                        </EditorActionButton>
-                        <EditorActionButton
-                          variant="danger"
-                          onClick={() => setPendingDelete({ type: 'edge', id })}
-                        >
-                          Delete
-                        </EditorActionButton>
-                      </>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          filteredManualEdges.length ? (
+            <ul
+              className="max-h-52 space-y-2 overflow-auto pr-1"
+              data-testid="manual-edge-list"
+            >
+              {filteredManualEdges.map(edge => {
+                const id = edgeId(edge);
+                const confirmingDelete =
+                  pendingDelete?.type === 'edge' && pendingDelete.id === id;
+                return (
+                  <li className="rounded border px-3 py-2 text-sm" key={id}>
+                    <div className="leading-6">
+                      <RelationshipSentence edge={edge} tagColors={tagColors} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {confirmingDelete ? (
+                        <>
+                          <span className="text-xs font-bold text-red-6">
+                            Confirm delete?
+                          </span>
+                          <EditorActionButton
+                            variant="danger"
+                            onClick={() => deleteEdge(edge)}
+                          >
+                            Yes
+                          </EditorActionButton>
+                          <EditorActionButton
+                            variant="secondary"
+                            onClick={() => setPendingDelete(null)}
+                          >
+                            No
+                          </EditorActionButton>
+                        </>
+                      ) : (
+                        <>
+                          <EditorActionButton onClick={() => editEdge(edge)}>
+                            Edit
+                          </EditorActionButton>
+                          <EditorActionButton
+                            variant="danger"
+                            onClick={() =>
+                              setPendingDelete({ type: 'edge', id })
+                            }
+                          >
+                            Delete
+                          </EditorActionButton>
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-grey-6">
+              No manual edges match this filter.
+            </p>
+          )
         ) : (
           <p className="text-sm text-grey-6">No manual tag-tag edges yet.</p>
         )}
@@ -1579,55 +1831,54 @@ export function NodeLinkEditor({
         <EditModal title="Edit edge" onClose={closeEditModal}>
           <div className="space-y-4">
             <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(12rem,1.2fr)_minmax(0,1fr)]">
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-source-tag"
+              >
                 Source Tag
-                <select
-                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                <TagCombobox
+                  id="edit-edge-source-tag"
+                  ariaLabel="Source tag"
+                  inputClassName="h-10"
+                  options={tags}
                   value={editEdgeSource}
                   disabled={!canEdit}
-                  onChange={event =>
-                    setEditEdgeSource((event.target as HTMLSelectElement).value)
-                  }
-                >
-                  <option value="">Source tag</option>
-                  {tags.map(tag => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Source tag"
+                  onChange={setEditEdgeSource}
+                />
               </label>
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-relationship"
+              >
                 Relationship
-                <input
-                  className="h-10 rounded border px-2 text-sm font-normal normal-case text-color-text"
+                <SearchableCombobox
+                  id="edit-edge-relationship"
+                  ariaLabel="Relationship"
+                  inputClassName="h-10"
+                  options={relationshipOptions}
+                  allowCustomValue
                   value={editEdgeRelationship}
                   disabled={!canEdit}
                   placeholder="relationship"
-                  onInput={event =>
-                    setEditEdgeRelationship(
-                      (event.target as HTMLInputElement).value,
-                    )
-                  }
+                  onChange={setEditEdgeRelationship}
                 />
               </label>
-              <label className="grid gap-1 text-xs font-bold uppercase text-grey-6">
+              <label
+                className="grid gap-1 text-xs font-bold uppercase text-grey-6"
+                htmlFor="edit-edge-target-tag"
+              >
                 Target Tag
-                <select
-                  className="h-10 rounded border bg-white px-2 text-sm font-normal normal-case text-color-text"
+                <TagCombobox
+                  id="edit-edge-target-tag"
+                  ariaLabel="Target tag"
+                  inputClassName="h-10"
+                  options={tags}
                   value={editEdgeTarget}
                   disabled={!canEdit}
-                  onChange={event =>
-                    setEditEdgeTarget((event.target as HTMLSelectElement).value)
-                  }
-                >
-                  <option value="">Target tag</option>
-                  {tags.map(tag => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Target tag"
+                  onChange={setEditEdgeTarget}
+                />
               </label>
             </div>
             <div className="flex justify-end gap-2">
@@ -1684,7 +1935,7 @@ export function NodeLinkGraphPage({
   const groups = store.allGroups();
   const hasFetchedProfile = store.hasFetchedProfile();
   const isLoggedIn = store.isLoggedIn();
-  const tagColors = store.tagInventorySchemaTagColors();
+  const schemaTagColors = store.tagInventorySchemaTagColors();
   const routeGroup = routeGroupParam(routeParams);
   const focusedGroupId = store.focusedGroupId() || '';
   const canonicalRouteGroup = routeGroup
@@ -1704,8 +1955,17 @@ export function NodeLinkGraphPage({
   const [selectedDocumentUri, setSelectedDocumentUri] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
+  const [spotlightTag, setSpotlightTag] = useState('');
+  const [viewportView, setViewportView] = useState<ViewportView>('graph');
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [sidebarView, setSidebarView] = useState<SidebarView>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
+  const detailsPanelRef = useRef<HTMLDivElement | null>(null);
+  const detailsTabRef = useRef<HTMLButtonElement | null>(null);
+  const editorTabRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarVisibleBeforeOverviewRef = useRef(true);
+  const inspectedSelectionRef = useRef('');
   const activeLoadRef = useRef<{
     controller: AbortController;
     loadKey: string;
@@ -1850,6 +2110,18 @@ export function NodeLinkGraphPage({
     () => buildNodeLinkGraph(annotations, semanticState),
     [annotations, semanticState],
   );
+  const tagColors = useMemo(
+    () =>
+      distinctTagColors(
+        groupGraph.tags.map(tag => tag.tag),
+        schemaTagColors,
+      ),
+    [groupGraph.tags, schemaTagColors],
+  );
+  const spotlightGraph = useMemo(
+    () => spotlightNodeLinkGraph(graph, spotlightTag),
+    [graph, spotlightTag],
+  );
   const documentOptions = groupGraph.documents;
 
   useEffect(() => {
@@ -1868,6 +2140,12 @@ export function NodeLinkGraphPage({
   }, [graph.tags, selectedTag]);
 
   useEffect(() => {
+    if (spotlightTag && !graph.tags.some(tag => tag.tag === spotlightTag)) {
+      setSpotlightTag('');
+    }
+  }, [graph.tags, spotlightTag]);
+
+  useEffect(() => {
     if (
       selectedEdgeId &&
       !graph.manualEdges.some(edge => edgeId(edge) === selectedEdgeId)
@@ -1878,6 +2156,22 @@ export function NodeLinkGraphPage({
 
   const selectedEdge =
     graph.manualEdges.find(edge => edgeId(edge) === selectedEdgeId) || null;
+  const selectionKey = selectedEdgeId
+    ? `edge:${selectedEdgeId}`
+    : selectedTag
+      ? `tag:${selectedTag}`
+      : '';
+
+  useEffect(() => {
+    if (
+      sidebarView !== 'details' ||
+      inspectedSelectionRef.current === selectionKey
+    ) {
+      return;
+    }
+    inspectedSelectionRef.current = selectionKey;
+    detailsPanelRef.current?.scrollTo({ top: 0 });
+  }, [selectionKey, sidebarView]);
 
   const selectTag = (tag: string) => {
     setSelectedTag(tag);
@@ -1887,6 +2181,73 @@ export function NodeLinkGraphPage({
   const selectEdge = (id: string) => {
     setSelectedEdgeId(current => (current === id ? '' : id));
     setSelectedTag('');
+  };
+
+  const clearSelection = () => {
+    setSelectedTag('');
+    setSelectedEdgeId('');
+  };
+
+  const selectSpotlightTag = (tag: string) => {
+    setSpotlightTag(tag);
+    setSelectedTag(tag);
+    setSelectedEdgeId('');
+  };
+
+  const clearSpotlight = () => {
+    setSpotlightTag('');
+    clearSelection();
+  };
+
+  const showViewportView = (view: ViewportView) => {
+    if (view === viewportView) {
+      return;
+    }
+
+    if (view === 'overview') {
+      sidebarVisibleBeforeOverviewRef.current = isSidebarVisible;
+      setIsSidebarVisible(false);
+    } else if (viewportView === 'overview') {
+      setIsSidebarVisible(sidebarVisibleBeforeOverviewRef.current);
+    }
+    setViewportView(view);
+  };
+
+  const toggleSidebar = () => {
+    const nextVisible = !isSidebarVisible;
+    setIsSidebarVisible(nextVisible);
+    if (viewportView !== 'overview') {
+      sidebarVisibleBeforeOverviewRef.current = nextVisible;
+    }
+  };
+
+  const showSidebarView = (view: SidebarView, focusTab = false) => {
+    setSidebarView(view);
+    if (focusTab) {
+      (view === 'details' ? detailsTabRef : editorTabRef).current?.focus();
+    }
+  };
+
+  const handleSidebarTabKeyDown = (
+    event: JSX.TargetedKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    let nextView: SidebarView | null = null;
+    if (event.key === 'Home') {
+      nextView = 'details';
+    } else if (event.key === 'End') {
+      nextView = 'edit';
+    } else if (
+      event.key === 'ArrowLeft' ||
+      event.key === 'ArrowRight' ||
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown'
+    ) {
+      nextView = sidebarView === 'details' ? 'edit' : 'details';
+    }
+    if (nextView) {
+      event.preventDefault();
+      showSidebarView(nextView, true);
+    }
   };
 
   const login = async () => {
@@ -1933,7 +2294,7 @@ export function NodeLinkGraphPage({
       <div className="flex min-h-0 flex-1">
         <main className="grid min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-3 p-4">
           <section className="rounded border bg-white p-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="grid min-w-0 gap-1 text-sm font-medium">
                 <span>Group</span>
                 <select
@@ -1945,6 +2306,8 @@ export function NodeLinkGraphPage({
                       (event.target as HTMLSelectElement).value,
                     );
                     setSelectedDocumentUri('');
+                    setSpotlightTag('');
+                    clearSelection();
                   }}
                 >
                   {!groups.length && <option value="">No groups loaded</option>}
@@ -1955,6 +2318,22 @@ export function NodeLinkGraphPage({
                   ))}
                 </select>
               </label>
+              <label
+                className="grid min-w-0 gap-1 text-sm font-medium"
+                htmlFor="node-link-spotlight"
+              >
+                <span>Spotlight neighborhood</span>
+                <SearchableCombobox
+                  id="node-link-spotlight"
+                  ariaLabel="Spotlight a tag neighborhood"
+                  options={tagOptions(graph)}
+                  value={spotlightTag}
+                  disabled={status === 'loading' || !graph.tags.length}
+                  placeholder="Choose a tag to isolate"
+                  onChange={selectSpotlightTag}
+                />
+              </label>
+              {/* Document filter disabled — always show all documents in the group.
               <label className="grid min-w-0 gap-1 text-sm font-medium">
                 <span>Document</span>
                 <select
@@ -1979,12 +2358,83 @@ export function NodeLinkGraphPage({
                   ))}
                 </select>
               </label>
+              */}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+              <div
+                className="inline-flex rounded border bg-grey-1 p-0.5"
+                role="group"
+                aria-label="Main viewport"
+              >
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'graph'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'graph'}
+                  onClick={() => showViewportView('graph')}
+                >
+                  Graph
+                </button>
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'edges'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'edges'}
+                  onClick={() => showViewportView('edges')}
+                >
+                  Manual relationships
+                </button>
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'overview'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'overview'}
+                  onClick={() => showViewportView('overview')}
+                >
+                  Tag overview
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                {spotlightTag && (
+                  <button
+                    className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                    type="button"
+                    onClick={clearSpotlight}
+                  >
+                    Clear spotlight
+                  </button>
+                )}
+                <button
+                  className="rounded border bg-white px-2.5 py-1 text-xs font-bold text-grey-6 hover:border-brand hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  aria-controls="node-link-sidebar"
+                  aria-expanded={isSidebarVisible}
+                  data-testid="node-link-sidebar-toggle"
+                  onClick={toggleSidebar}
+                >
+                  {isSidebarVisible ? 'Hide sidebar' : 'Show sidebar'}
+                </button>
+              </div>
             </div>
             <div className="mt-2 text-sm text-grey-6">
               {status === 'loading'
                 ? 'Loading graph data...'
                 : selectedGroup
-                  ? `${graph.tags.length} tags, ${graph.documents.length} documents, ${graph.manualEdges.length} manual tag-tag edges`
+                  ? spotlightTag
+                    ? `${spotlightGraph.tags.length} of ${graph.tags.length} tags shown around ${spotlightTag}, with ${spotlightGraph.manualEdges.length} direct relationships`
+                    : `${graph.tags.length} tags, ${graph.documents.length} documents, ${graph.manualEdges.length} manual tag-tag edges`
                   : 'Choose a group to load graph data.'}
             </div>
           </section>
@@ -2014,24 +2464,145 @@ export function NodeLinkGraphPage({
               <p className="mb-4 text-sm text-grey-6">{message}</p>
               <Button onClick={() => loadGraph(true)}>Retry</Button>
             </div>
+          ) : viewportView === 'overview' ? (
+            <TagOverviewViewport
+              graph={graph}
+              spotlightTag={spotlightTag}
+              tagColors={tagColors}
+            />
+          ) : viewportView === 'edges' ? (
+            <ManualEdgeViewport
+              graph={graph}
+              spotlightTag={spotlightTag}
+              selectedTag={selectedTag}
+              selectedEdgeId={selectedEdgeId}
+              tagColors={tagColors}
+              onSelectEdge={selectEdge}
+            />
           ) : (
             <GraphCanvas
               graph={graph}
+              spotlightTag={spotlightTag}
               selectedTag={selectedTag}
               selectedEdgeId={selectedEdgeId}
               tagColors={tagColors}
               onSelectTag={selectTag}
               onSelectEdge={selectEdge}
-              onClearSelection={() => {
-                setSelectedTag('');
-                setSelectedEdgeId('');
-              }}
+              onClearSelection={clearSelection}
             />
           )}
         </main>
 
-        <aside className="w-[390px] shrink-0 overflow-auto border-l bg-white p-4">
-          <div className="space-y-5">
+        <aside
+          id="node-link-sidebar"
+          className={classnames(
+            'min-h-0 w-[390px] shrink-0 flex-col border-l bg-white',
+            isSidebarVisible ? 'flex' : 'hidden',
+          )}
+          data-testid="node-link-sidebar"
+          hidden={!isSidebarVisible}
+        >
+          <header className="flex items-start justify-between gap-3 border-b bg-grey-1 px-4 py-3">
+            <div className="min-w-0" data-testid="node-link-selection-summary">
+              <div className="text-xs font-bold uppercase text-grey-6">
+                {selectedEdge
+                  ? 'Relationship selected'
+                  : selectedTag
+                    ? 'Tag selected'
+                    : 'Graph inspector'}
+              </div>
+              <div
+                className="mt-0.5 truncate text-sm font-bold text-color-text"
+                title={
+                  selectedEdge
+                    ? `${selectedEdge.sourceTag} ${selectedEdge.connectionType} ${selectedEdge.targetTag}`
+                    : selectedTag || undefined
+                }
+              >
+                {selectedEdge
+                  ? `${selectedEdge.sourceTag} ${selectedEdge.connectionType} ${selectedEdge.targetTag}`
+                  : selectedTag || 'Select a node or relationship'}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {sidebarView === 'edit' && selectionKey && (
+                <button
+                  className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={() => showSidebarView('details', true)}
+                >
+                  View details
+                </button>
+              )}
+              {selectionKey && (
+                <button
+                  className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+                  type="button"
+                  onClick={clearSelection}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </header>
+
+          <div
+            className="grid grid-cols-2 border-b bg-white px-3 pt-2"
+            role="tablist"
+            aria-label="Graph sidebar views"
+          >
+            <button
+              id="node-link-details-tab"
+              className={classnames(
+                '-mb-px border-b-2 px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                {
+                  'border-brand text-brand': sidebarView === 'details',
+                  'border-transparent text-grey-6 hover:text-color-text':
+                    sidebarView !== 'details',
+                },
+              )}
+              type="button"
+              role="tab"
+              aria-controls="node-link-details-panel"
+              aria-selected={sidebarView === 'details'}
+              tabIndex={sidebarView === 'details' ? 0 : -1}
+              onClick={() => showSidebarView('details')}
+              onKeyDown={handleSidebarTabKeyDown}
+              ref={detailsTabRef}
+            >
+              Details
+            </button>
+            <button
+              id="node-link-editor-tab"
+              className={classnames(
+                '-mb-px border-b-2 px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand',
+                {
+                  'border-brand text-brand': sidebarView === 'edit',
+                  'border-transparent text-grey-6 hover:text-color-text':
+                    sidebarView !== 'edit',
+                },
+              )}
+              type="button"
+              role="tab"
+              aria-controls="node-link-editor-panel"
+              aria-selected={sidebarView === 'edit'}
+              tabIndex={sidebarView === 'edit' ? 0 : -1}
+              onClick={() => showSidebarView('edit')}
+              onKeyDown={handleSidebarTabKeyDown}
+              ref={editorTabRef}
+            >
+              Edit graph
+            </button>
+          </div>
+
+          <div
+            id="node-link-details-panel"
+            className="min-h-0 flex-1 overflow-auto p-4"
+            role="tabpanel"
+            aria-labelledby="node-link-details-tab"
+            hidden={sidebarView !== 'details'}
+            ref={detailsPanelRef}
+          >
             <EvidencePanel
               graph={graph}
               selectedTag={selectedTag}
@@ -2039,6 +2610,14 @@ export function NodeLinkGraphPage({
               tagColors={tagColors}
               onSelectEdge={selectEdge}
             />
+          </div>
+          <div
+            id="node-link-editor-panel"
+            className="min-h-0 flex-1 overflow-auto p-4"
+            role="tabpanel"
+            aria-labelledby="node-link-editor-tab"
+            hidden={sidebarView !== 'edit'}
+          >
             <NodeLinkEditor
               graph={graph}
               selectedTag={selectedTag}

@@ -1,4 +1,8 @@
 import type { SavedAnnotation } from '../../types/api';
+import {
+  NODE_LINK_STATE_TAG,
+  NODE_LINK_STATE_VERSION_TAG,
+} from '../node-link/graph-state';
 import type { TagInventoryRow } from '../store/modules/sidebar-panels';
 import { isReply, isSaved } from './annotation-metadata';
 import { documentUriMatches } from './document-uri';
@@ -62,10 +66,12 @@ function norm(value: string): string {
   return value.trim();
 }
 
-function isAiSearchSystemTag(tag: string): boolean {
+export function isAiSearchSystemTag(tag: string): boolean {
   return (
     tag === AI_USER_APPROVED ||
     tag === AI_PENDING ||
+    tag === NODE_LINK_STATE_TAG ||
+    tag === NODE_LINK_STATE_VERSION_TAG ||
     tag.startsWith(AI_PRIMARY_TAG_PREFIX)
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { SavedAnnotation } from '../../types/api';
 import { quote as annotationQuote } from '../helpers/annotation-metadata';
 import { PUBLIC_GROUP_ID } from '../helpers/groups';
+import { isAiSearchSystemTag } from '../helpers/tag-inventory-group';
 import { withServices } from '../service-context';
 import {
   savedAnnotationsForCurrentDocument,
@@ -10,6 +11,7 @@ import {
 } from '../services/tag-inventory-group-sync';
 import { useSidebarStore } from '../store';
 import HighlightedSentence, { type LabeledSpan, type RenderMode } from './HighlightedSentence';
+import { SearchableCombobox } from './SearchableCombobox';
 
 type GroupAnnotationsTabProps = {
   tagInventoryGroupSync: TagInventoryGroupSyncService;
@@ -423,10 +425,15 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
   });
 
   return (
-    <section ref={contentRef} className="border-b border-grey-3 last:border-b-0">
+    <section
+      ref={contentRef}
+      className="border-b border-grey-3 last:border-b-0"
+      data-testid="group-annotations-section"
+      data-tag={tag || 'Untagged'}
+    >
       {/* Header with expand/collapse */}
       <button
-        className="w-full flex items-center justify-between font-bold text-color-text px-2 py-2 bg-grey-1 sticky top-0 z-10"
+        className="w-full flex items-center justify-between font-bold text-color-text px-2 py-2 bg-grey-1 sticky top-[53px] z-[9]"
         style={{ fontSize: '16px' }}
         onClick={() => setIsExpanded(v => !v)}
       >
@@ -674,7 +681,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
 
 // ─── Main tab component ──────────────────────────────────────────────────────
 
-function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps) {
+export function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps) {
   const store = useSidebarStore();
   const focusedGroupId = store.focusedGroupId();
   const isFullWidth = store.isSidebarFullWidth();
@@ -688,6 +695,9 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState('');
+
+  useEffect(() => setTagFilter(''), [focusedGroupId]);
 
   useEffect(() => {
     if (!focusedGroupId || focusedGroupId === PUBLIC_GROUP_ID) return;
@@ -714,24 +724,62 @@ function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsTabProps
   for (const ann of annotations) {
     const tags = ann.tags.length > 0 ? ann.tags : [''];
     for (const tag of tags) {
+      if (isAiSearchSystemTag(tag)) {
+        continue;
+      }
       if (!tagMap.has(tag)) tagMap.set(tag, []);
       tagMap.get(tag)!.push(ann);
     }
   }
   const sortedTags = [...tagMap.keys()].filter(t => t !== '' && !t.startsWith('node-link-state')).sort((a, b) => a.localeCompare(b));
   if (tagMap.has('')) sortedTags.push('');
+  const normalizedTagFilter = tagFilter.trim().toLocaleLowerCase();
+  const filteredTags = normalizedTagFilter
+    ? sortedTags.filter(tag =>
+        (tag || 'Untagged').toLocaleLowerCase().includes(normalizedTagFilter),
+      )
+    : sortedTags;
+  const tagFilterOptions = sortedTags.map(tag => tag || 'Untagged');
 
   return (
     <div className="flex flex-col">
-      {sortedTags.map(tag => (
-        <GroupSection
-          key={`${focusedGroupId}-${tag || '__untagged__'}`}
-          tag={tag}
-          annotations={tagMap.get(tag)!}
-          groupId={focusedGroupId ?? ''}
-          isFullWidth={isFullWidth}
-        />
-      ))}
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-grey-3 bg-grey-1 p-2">
+        <div className="min-w-0 flex-1">
+          <SearchableCombobox
+            id="group-annotations-tag-filter"
+            ariaLabel="Filter annotation sections by tag"
+            options={tagFilterOptions}
+            allowCustomValue
+            value={tagFilter}
+            placeholder="Filter tag sections"
+            onChange={setTagFilter}
+          />
+        </div>
+        {tagFilter && (
+          <button
+            className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+            type="button"
+            onClick={() => setTagFilter('')}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      {filteredTags.length ? (
+        filteredTags.map(tag => (
+          <GroupSection
+            key={`${focusedGroupId}-${tag || '__untagged__'}`}
+            tag={tag}
+            annotations={tagMap.get(tag)!}
+            groupId={focusedGroupId ?? ''}
+            isFullWidth={isFullWidth}
+          />
+        ))
+      ) : (
+        <p className="p-4 text-center text-sm text-color-text-light">
+          No tag sections match this filter.
+        </p>
+      )}
     </div>
   );
 }

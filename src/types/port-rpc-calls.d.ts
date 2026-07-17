@@ -262,6 +262,12 @@ export type SidebarToGuestCalls = {
    * Only available for PDF documents.
    */
   getPdfBytes(callback: (result: Result<string>) => void): void;
+
+  /**
+   * Return visible HTML document text for Claude document search.
+   * Used when Anthropic cannot download the page URL (paywalls, auth).
+   */
+  getDocumentText(callback: (result: Result<string>) => void): void;
 };
 
 /** Calls that the sidebar makes to the host. */

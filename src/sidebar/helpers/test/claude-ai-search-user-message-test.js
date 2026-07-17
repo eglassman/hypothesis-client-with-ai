@@ -92,6 +92,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         schemaTag: 's',
         searchQuery: 'q',
       });
+      assert.include(out, 'Tag: \n\n');
       assert.include(out, 'Examples of tag-query-quote triples');
       assert.include(out, 'tag: ');
       assert.include(out, 'query: ');
@@ -111,7 +112,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       );
     });
 
-    it('prepends simple tag relationship lines when provided', () => {
+    it('places tag relationship lines after examples and before the question', () => {
       const out = buildClaudeAISearchUserMessage({
         positiveExamples: [],
         schemaTag: 's',
@@ -137,28 +138,146 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
           },
         ],
       });
+      const titleIdx = out.indexOf('Tag: Methods');
       const referenceIdx = out.indexOf(
-        'Tag relationships for the selected group:',
+        'These tags have the following relationships to each other:',
       );
       const questionIdx = out.indexOf(
         'What retrieved verbatim quotes from the document',
       );
 
+      assert.isAtLeast(titleIdx, 0);
       assert.isAtLeast(referenceIdx, 0);
+      assert.isBelow(titleIdx, referenceIdx);
       assert.isBelow(referenceIdx, questionIdx);
-      assert.include(
+      assert.notInclude(
+        out,
+        'Tag relationships for the selected group:',
+      );
+      assert.notInclude(
         out,
         'Descriptive tags are inter-tag relationship context only; do not tag any quotes with descriptive tags.',
       );
-      assert.include(out, 'Methods supports Finding [descriptive]\n');
-      assert.lengthOf(
-        out.match(/Methods supports Finding \[descriptive\]/g) || [],
-        1,
-      );
+      assert.notInclude(out, '[descriptive]');
+      assert.include(out, 'Methods supports Finding\n');
+      assert.notInclude(out, 'Tag: Finding');
+      assert.lengthOf(out.match(/Methods supports Finding/g) || [], 1);
       assert.notInclude(out, '<-');
       assert.notInclude(out, '->');
       assert.notInclude(out, 'count=');
       assert.notInclude(out, '"outgoingRelationships"');
+    });
+
+    it('groups examples and relationships by tag', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [
+          { tag: 'Methods', query: 'q1', quote: 'positive quote' },
+        ],
+        schemaTag: 's',
+        searchQuery: 'q',
+        negativeExamples: [
+          { tag: 'Methods', query: 'nq', quote: 'negative quote' },
+        ],
+        tagReference: [
+          {
+            tag: 'Methods',
+            annotationCount: 2,
+            descriptive: false,
+            outgoingRelationships: [
+              { relationship: 'supports', targetTag: 'Finding' },
+            ],
+            incomingRelationships: [],
+          },
+          {
+            tag: 'Finding',
+            annotationCount: 1,
+            descriptive: true,
+            outgoingRelationships: [],
+            incomingRelationships: [
+              { sourceTag: 'Methods', relationship: 'supports' },
+            ],
+          },
+        ],
+      });
+
+      const methodsTitleIdx = out.indexOf('Tag: Methods');
+      const methodsPosIdx = out.indexOf('Examples of tag-query-quote triples');
+      const methodsNegIdx = out.indexOf(
+        'Negative examples of tag-query-quote triples:',
+      );
+      const methodsRelIdx = out.indexOf(
+        'These tags have the following relationships to each other:',
+      );
+      const questionIdx = out.indexOf(
+        'What retrieved verbatim quotes from the document',
+      );
+
+      assert.isBelow(methodsTitleIdx, methodsPosIdx);
+      assert.isBelow(methodsPosIdx, methodsNegIdx);
+      assert.isBelow(methodsNegIdx, methodsRelIdx);
+      assert.isBelow(methodsRelIdx, questionIdx);
+      assert.include(out, 'Methods supports Finding\n');
+      assert.notInclude(out, 'Tag: Finding');
+      assert.notInclude(out, '[descriptive]');
+    });
+
+    it('includes a descriptive tag section only when it has outgoing links', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [],
+        schemaTag: 's',
+        searchQuery: 'q',
+        tagReference: [
+          {
+            tag: 'Theme',
+            annotationCount: 0,
+            descriptive: true,
+            outgoingRelationships: [
+              { relationship: 'frames', targetTag: 'Methods' },
+            ],
+            incomingRelationships: [],
+          },
+          {
+            tag: 'Methods',
+            annotationCount: 1,
+            descriptive: false,
+            outgoingRelationships: [],
+            incomingRelationships: [
+              { sourceTag: 'Theme', relationship: 'frames' },
+            ],
+          },
+        ],
+      });
+
+      assert.include(out, 'Tag: Theme\n\n');
+      assert.include(out, 'Theme frames Methods\n');
+      assert.notInclude(out, 'Tag: Methods');
+      assert.notInclude(out, '[descriptive]');
+    });
+
+    it('omits relationship header when tagReference has no outgoing edges', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [{ tag: 'Methods', query: 'q', quote: 'v' }],
+        schemaTag: 's',
+        searchQuery: 'q',
+        tagReference: [
+          {
+            tag: 'Finding',
+            annotationCount: 1,
+            descriptive: true,
+            outgoingRelationships: [],
+            incomingRelationships: [
+              { sourceTag: 'Methods', relationship: 'supports' },
+            ],
+          },
+        ],
+      });
+
+      assert.include(out, 'Tag: Methods');
+      assert.notInclude(
+        out,
+        'These tags have the following relationships to each other:',
+      );
+      assert.notInclude(out, 'Tag: Finding');
     });
 
     it('appends negative examples after positives when both present', () => {
@@ -168,20 +287,22 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         searchQuery: 'find',
         negativeExamples: [
           {
-            tag: 'nt',
+            tag: 't',
             query: 'nq',
             quote: 'bad',
           },
         ],
       });
+      const tagIdx = out.indexOf('Tag: t');
       const posIdx = out.indexOf('Examples of tag-query-quote triples');
       const negIdx = out.indexOf(
         'Negative examples of tag-query-quote triples:',
       );
+      assert.isBelow(tagIdx, posIdx);
       assert.isBelow(posIdx, negIdx);
       assert.include(
         out,
-        '- tag: nt\n  query: nq\n  should not return\n  quote: bad\n',
+        '- tag: t\n  query: nq\n  should not return\n  quote: bad\n',
       );
     });
 
@@ -199,6 +320,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
         ],
       });
       assert.notInclude(out, 'Examples of tag-query-quote triples');
+      assert.include(out, 'Tag: a');
       assert.include(out, 'Negative examples of tag-query-quote triples:');
       assert.include(
         out,
@@ -220,9 +342,91 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
           },
         ],
       });
+      assert.include(out, 'Tag: \n\n');
       assert.include(
         out,
         '- tag: \n  query: onlyq\n  should not return\n  quote: qt\n',
+      );
+    });
+
+    it('strips -neg-example suffix from negative example tag sections', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [],
+        schemaTag: 'theory connection',
+        searchQuery: '',
+        negativeExamples: [
+          {
+            tag: 'theory connection',
+            query: '',
+            quote: 'bad quote',
+          },
+        ],
+      });
+
+      assert.include(out, 'Tag: theory connection');
+      assert.notInclude(out, '-neg-example');
+      assert.include(
+        out,
+        '- tag: theory connection\n  query: \n  should not return\n  quote: bad quote\n',
+      );
+    });
+
+    it('merges positive and negative examples under one base tag section', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [
+          {
+            tag: 'theory connection',
+            query: 'q1',
+            quote: 'good quote',
+          },
+        ],
+        schemaTag: 'theory connection',
+        searchQuery: '',
+        negativeExamples: [
+          {
+            tag: 'theory connection',
+            query: '',
+            quote: 'bad quote',
+          },
+        ],
+      });
+
+      const titleIdx = out.indexOf('Tag: theory connection');
+      const posIdx = out.indexOf('Examples of tag-query-quote triples');
+      const negIdx = out.indexOf(
+        'Negative examples of tag-query-quote triples:',
+      );
+      const secondTitleIdx = out.indexOf(
+        'Tag: theory connection',
+        titleIdx + 1,
+      );
+
+      assert.isAtLeast(titleIdx, 0);
+      assert.equal(secondTitleIdx, -1);
+      assert.isBelow(titleIdx, posIdx);
+      assert.isBelow(posIdx, negIdx);
+      assert.notInclude(out, '-neg-example');
+    });
+
+    it('includes multi-tag rows in each constituent tag section', () => {
+      const out = buildClaudeAISearchUserMessage({
+        positiveExamples: [
+          { tag: 'Methods, Finding', query: 'q', quote: 'shared quote' },
+        ],
+        schemaTag: 's',
+        searchQuery: 'q',
+      });
+
+      const methodsIdx = out.indexOf('Tag: Methods');
+      const findingIdx = out.indexOf('Tag: Finding');
+      assert.isAtLeast(methodsIdx, 0);
+      assert.isAtLeast(findingIdx, 0);
+      assert.isBelow(findingIdx, methodsIdx);
+      assert.lengthOf(
+        out.match(
+          /- tag: Methods, Finding\n  query: q\n  quote: shared quote\n/g,
+        ) || [],
+        2,
       );
     });
   });
@@ -574,7 +778,7 @@ describe('sidebar/helpers/claude-ai-search-user-message', () => {
       });
       const rows = collectNegativeExamplesFromAnnotations([ann]);
       assert.deepEqual(rows, [
-        { tag: 'methods-neg-example', query: 'bad q', quote: 'verbatim quote' },
+        { tag: 'methods', query: 'bad q', quote: 'verbatim quote' },
       ]);
     });
 

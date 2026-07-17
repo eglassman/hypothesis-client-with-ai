@@ -16,14 +16,15 @@ import {
   isSaved,
   shape,
 } from '../../helpers/annotation-metadata';
+import type { UserItem } from '../../helpers/mention-suggestions';
+import { combineUsersForMentions } from '../../helpers/mention-suggestions';
+import type { MentionMode } from '../../helpers/mentions';
 import {
   retagOneNegativeSchemaTagAsPositive,
   retagOnePositiveSchemaTagAsNegative,
 } from '../../helpers/tag-inventory-group';
-import type { UserItem } from '../../helpers/mention-suggestions';
-import { combineUsersForMentions } from '../../helpers/mention-suggestions';
-import type { MentionMode } from '../../helpers/mentions';
 import { applyTheme } from '../../helpers/theme';
+import { contentTags } from '../../node-link/graph-state';
 import { withServices } from '../../service-context';
 import type { AnnotationsService } from '../../services/annotations';
 import type { GroupsService } from '../../services/groups';
@@ -69,7 +70,20 @@ function AnnotationEditor({
 
   const store = useSidebarStore();
   const group = store.getGroup(annotation.group);
+  const allAnnotations = store.allAnnotations();
   const isReplyAnno = useMemo(() => isReply(annotation), [annotation]);
+  const suggestedTags = useMemo(() => {
+    const groupTags = new Set<string>();
+    for (const existingAnnotation of allAnnotations) {
+      if (existingAnnotation.group !== annotation.group) {
+        continue;
+      }
+      for (const tag of contentTags(existingAnnotation.tags || [])) {
+        groupTags.add(tag);
+      }
+    }
+    return [...groupTags].sort((a, b) => a.localeCompare(b));
+  }, [allAnnotations, annotation.group]);
 
   const showDescription = useMemo(
     () => shape(annotation) && store.isFeatureEnabled('image_descriptions'),
@@ -334,6 +348,7 @@ function AnnotationEditor({
         onRemoveTag={onRemoveTag}
         onRevertNegativeExample={onRevertNegativeExample}
         onTagInput={setPendingTag}
+        suggestedTags={suggestedTags}
         tagList={tags}
       />
       {group && (

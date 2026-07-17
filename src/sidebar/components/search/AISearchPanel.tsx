@@ -31,6 +31,7 @@ import {
   deleteAllActionForTagInventoryRowMatch,
   expectedTagsForStrictAISearchPending,
   filterAiSearchQuotesAgainstExisting,
+  listSavedAnnotationsMatchingTagInventoryRow,
   listStrictTagInventoryRowPendingAnnotations,
   tagsAfterRemovingTagInventoryRowSchemaTag,
 } from '../../helpers/claude-ai-search-user-message';
@@ -82,6 +83,7 @@ import {
   isRateLimitFetchError,
   retryOnRateLimit,
 } from '../../util/retry-on-rate-limit';
+import { SearchableCombobox } from '../SearchableCombobox';
 import SidebarPanel from '../SidebarPanel';
 import SearchField from './SearchField';
 import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
@@ -255,6 +257,16 @@ function AISearchPanel({
         showHiddenRows ? scopedRows : scopedRows.filter(r => !r.hidden),
       ),
     [scopedRows, showHiddenRows],
+  );
+  const schemaTagOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(schemaTagColors),
+          ...scopedRows.map(row => row.schemaTag.trim()).filter(Boolean),
+        ]),
+      ).sort((a, b) => a.localeCompare(b)),
+    [schemaTagColors, scopedRows],
   );
   const isPublicGroup = focusedGroupId === PUBLIC_GROUP_ID;
   const annotationsForInventoryCount = useMemo(() => {
@@ -490,25 +502,44 @@ function AISearchPanel({
             documentUri: claudeDocumentUri,
           });
         } catch (urlError) {
-          if (!isPdfDocument || !isClaudeDocumentDownloadError(urlError)) {
+          if (!isClaudeDocumentDownloadError(urlError)) {
             throw urlError;
           }
-          toastMessenger.notice('Uploading PDF from browser…');
-          let documentPdfBase64: string;
-          try {
-            documentPdfBase64 = await frameSync.getPdfBytes();
-          } catch (bytesError) {
-            console.warn(
-              '[AISearch] Claude could not download URL and guest PDF read failed',
-              bytesError,
-            );
-            throw urlError;
+          if (isPdfDocument) {
+            toastMessenger.notice('Uploading PDF from browser…');
+            let documentPdfBase64: string;
+            try {
+              documentPdfBase64 = await frameSync.getPdfBytes();
+            } catch (bytesError) {
+              console.warn(
+                '[AISearch] Claude could not download URL and guest PDF read failed',
+                bytesError,
+              );
+              throw urlError;
+            }
+            // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+            claudeResult = await claude.AISearchDocument({
+              ...claudeRequestBase,
+              documentPdfBase64,
+            });
+          } else {
+            toastMessenger.notice('Uploading page text from browser…');
+            let documentPlainText: string;
+            try {
+              documentPlainText = await frameSync.getDocumentText();
+            } catch (textError) {
+              console.warn(
+                '[AISearch] Claude could not download URL and guest HTML text read failed',
+                textError,
+              );
+              throw urlError;
+            }
+            // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+            claudeResult = await claude.AISearchDocument({
+              ...claudeRequestBase,
+              documentPlainText,
+            });
           }
-          // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
-          claudeResult = await claude.AISearchDocument({
-            ...claudeRequestBase,
-            documentPdfBase64,
-          });
         }
       } finally {
         finish();
@@ -1065,20 +1096,15 @@ function AISearchPanel({
                 claude.setApiKey(value);
               }}
             />
-            <Input
-              aria-label="schema tag"
-              classes="text-base touch:text-touch-base"
-              data-testid="schema-tag-input"
-              dir="auto"
-              name="schema-tag"
+            <SearchableCombobox
+              id="schema-tag-input"
+              ariaLabel="Schema tag"
+              options={schemaTagOptions}
+              allowCustomValue
+              inputClassName="h-10 text-base touch:text-touch-base"
               placeholder="Tag"
-              type="text"
               value={schemaTag}
-              onInput={(e: Event) => {
-                store.setAISearchPanelSchemaTagInput(
-                  (e.target as HTMLInputElement).value,
-                );
-              }}
+              onChange={value => store.setAISearchPanelSchemaTagInput(value)}
             />
             <SearchField
               inputRef={inputRef}
@@ -1217,8 +1243,8 @@ function AISearchPanel({
                           scope="col"
                         >
                           <span className="sr-only">
-                            Pending and total matching annotations for this tag
-                            and query
+                            Pending, confirmed in this doc, and total across all
+                            docs matching annotations for this tag and query
                           </span>
                         </th>
                         <th
@@ -1245,7 +1271,20 @@ function AISearchPanel({
                               uriAliases,
                             )
                           : 0;
-                        const totalCountFromStore = focusedGroupId
+                        const totalInThisDocCount = documentUri
+                          ? listSavedAnnotationsMatchingTagInventoryRow(
+                              savedAnnotations,
+                              documentUri,
+                              row.schemaTag,
+                              row.query,
+                              uriAliases,
+                            ).length
+                          : 0;
+                        const confirmedInThisDocCount = Math.max(
+                          0,
+                          totalInThisDocCount - pendingCount,
+                        );
+                        const totalAcrossAllDocsFromStore = focusedGroupId
                           ? countAnnotationsForTagInventoryRow(
                               annotationsForInventoryCount,
                               row,
@@ -1256,10 +1295,10 @@ function AISearchPanel({
                               },
                             )
                           : 0;
-                        const totalCount =
+                        const totalAcrossAllDocsCount =
                           deleteAllRemaining?.rowId === row.id
                             ? deleteAllRemaining.remaining
-                            : totalCountFromStore;
+                            : totalAcrossAllDocsFromStore;
                         const rerunDisabled = globalRowLock || !documentUri;
                         const deletePendingDisabled =
                           globalRowLock || !documentUri || pendingCount === 0;
@@ -1369,7 +1408,7 @@ function AISearchPanel({
                             </td>
                             <td className="w-min py-0.5 pr-2 text-right align-middle tabular-nums whitespace-nowrap">
                               <span
-                                title="Strict AI-pending annotations for this tag and query on this document"
+                                title="Pending AI suggestions for this tag and query in this doc"
                                 className="cursor-help tabular-nums"
                                 aria-label={`${pendingCount} pending`}
                               >
@@ -1383,11 +1422,25 @@ function AISearchPanel({
                                 |{' '}
                               </span>
                               <span
-                                title="Total matching annotations on this document: manual, accepted suggestions, and pending suggestions"
+                                title="Confirmed (non-pending) matching annotations for this tag and query in this doc"
                                 className="cursor-help tabular-nums"
-                                aria-label={`${totalCount} total`}
+                                aria-label={`${confirmedInThisDocCount} confirmed in this doc`}
                               >
-                                {totalCount}
+                                {confirmedInThisDocCount}
+                              </span>
+                              <span
+                                className="text-color-text-light"
+                                aria-hidden="true"
+                              >
+                                {' '}
+                                |{' '}
+                              </span>
+                              <span
+                                title="Total matching annotations for this tag and query across all docs"
+                                className="cursor-help tabular-nums"
+                                aria-label={`${totalAcrossAllDocsCount} total across all docs`}
+                              >
+                                {totalAcrossAllDocsCount}
                               </span>
                             </td>
                             <td className="w-min py-0.5 align-middle whitespace-nowrap">

@@ -3,12 +3,12 @@ import { Input } from '@hypothesis/frontend-shared';
 import classnames from 'classnames';
 import { useRef, useState } from 'preact/hooks';
 
-import { withServices } from '../service-context';
-import type { TagsService } from '../services/tags';
 import {
   canMarkTagAsNegativeExample,
   canRevertNegativeExampleTag,
 } from '../helpers/tag-inventory-group';
+import { withServices } from '../service-context';
+import type { TagsService } from '../services/tags';
 import AutocompleteList from './AutocompleteList';
 import TagList from './TagList';
 import TagListItem from './TagListItem';
@@ -22,6 +22,7 @@ export type TagEditorProps = {
   onRemoveTag: (tag: string) => boolean;
   onRevertNegativeExample?: (tag: string) => void;
   onTagInput: (tag: string) => void;
+  suggestedTags?: string[];
   tagList: string[];
 
   // injected
@@ -39,6 +40,7 @@ function TagEditor({
   onRemoveTag,
   onRevertNegativeExample,
   onTagInput,
+  suggestedTags = [],
   tagList,
   tags: tagsService,
 }: TagEditorProps) {
@@ -72,13 +74,24 @@ function TagEditor({
    * results also found from the duplicates list.
    */
   const removeDuplicates = (suggestions: string[], duplicates: string[]) => {
-    const suggestionsSet = [];
+    const suggestionsSet = new Set<string>();
     for (const suggestion of suggestions) {
       if (duplicates.indexOf(suggestion) < 0) {
-        suggestionsSet.push(suggestion);
+        suggestionsSet.add(suggestion);
       }
     }
-    return suggestionsSet.sort();
+    return [...suggestionsSet].sort((a, b) => a.localeCompare(b));
+  };
+
+  const matchesPendingTag = (tag: string) => {
+    const query = pendingTag().toLocaleLowerCase();
+    if (!query) {
+      return true;
+    }
+    return tag
+      .toLocaleLowerCase()
+      .split(/\W+/)
+      .some(word => word.startsWith(query));
   };
 
   /**
@@ -86,17 +99,14 @@ function TagEditor({
    * reset the activeItem and open the AutocompleteList
    */
   const updateSuggestions = () => {
-    if (!hasPendingTag()) {
-      // If there is no input, just hide the suggestions
-      setSuggestionsListOpen(false);
-    } else {
-      // Call filter() with a query value to return all matching suggestions.
-      const suggestions = tagsService.filter(pendingTag());
-      // Remove any repeated suggestions that are already tags
-      // and set those to state.
-      setSuggestions(removeDuplicates(suggestions, tagList));
-      setSuggestionsListOpen(suggestions.length > 0);
-    }
+    const rememberedTags = tagsService.filter(pendingTag());
+    const groupTags = suggestedTags.filter(matchesPendingTag);
+    const nextSuggestions = removeDuplicates(
+      [...rememberedTags, ...groupTags],
+      tagList,
+    );
+    setSuggestions(nextSuggestions);
+    setSuggestionsListOpen(nextSuggestions.length > 0);
     setActiveItem(-1);
   };
 
@@ -106,11 +116,12 @@ function TagEditor({
    */
   const addTag = (newTag: string) => {
     if (onAddTag(newTag)) {
-      setSuggestionsListOpen(false);
-      setActiveItem(-1);
-
       clearPendingTag();
       inputEl.current!.focus();
+      // Focusing an empty combobox opens its options. Close it again after a
+      // successful commit so Enter, Tab and click all have the same result.
+      setSuggestionsListOpen(false);
+      setActiveItem(-1);
     }
   };
 
@@ -129,13 +140,16 @@ function TagEditor({
     }
   };
 
-  /**
-   * Opens the AutocompleteList on focus if there is a value in the input
-   */
-  const handleFocus = () => {
-    if (hasPendingTag()) {
-      setSuggestionsListOpen(true);
+  const handleFocus = () => updateSuggestions();
+
+  const toggleSuggestions = () => {
+    if (suggestionsListOpen) {
+      setSuggestionsListOpen(false);
+      setActiveItem(-1);
+      return;
     }
+    inputEl.current?.focus();
+    updateSuggestions();
   };
 
   /**
@@ -289,26 +303,42 @@ function TagEditor({
         data-testid="combobox-container"
         ref={closeWrapperRef}
       >
-        <Input
-          onInput={handleOnInput}
-          onKeyDown={handleKeyDown}
-          onFocus={handleFocus}
-          elementRef={inputEl}
-          placeholder="Add new tags"
-          type="text"
-          autoComplete="off"
-          aria-autocomplete="list"
-          aria-activedescendant={activeDescendant}
-          aria-controls={`${tagEditorId}-AutocompleteList`}
-          aria-expanded={suggestionsListOpen}
-          aria-label="Add tags"
-          dir="auto"
-          role="combobox"
-          classes={classnames(
-            // Larger font on touch devices
-            'text-base touch:text-touch-base',
-          )}
-        />
+        <div className="flex min-w-0 items-stretch">
+          <Input
+            onInput={handleOnInput}
+            onKeyDown={handleKeyDown}
+            onFocus={handleFocus}
+            elementRef={inputEl}
+            placeholder="Add new tags"
+            type="text"
+            autoComplete="off"
+            aria-autocomplete="list"
+            aria-activedescendant={activeDescendant}
+            aria-controls={`${tagEditorId}-AutocompleteList`}
+            aria-expanded={suggestionsListOpen}
+            aria-label="Add tags"
+            dir="auto"
+            role="combobox"
+            classes={classnames(
+              'min-w-0 flex-1 rounded-r-none',
+              // Larger font on touch devices
+              'text-base touch:text-touch-base',
+            )}
+          />
+          <button
+            className="rounded-r border border-l-0 bg-grey-1 px-3 text-xs font-bold text-grey-7 hover:bg-grey-2 focus:outline-none focus:ring-2 focus:ring-brand"
+            type="button"
+            aria-controls={`${tagEditorId}-AutocompleteList`}
+            aria-expanded={suggestionsListOpen}
+            aria-haspopup="listbox"
+            aria-label="Show tag suggestions"
+            title="Show existing tags"
+            onMouseDown={event => event.preventDefault()}
+            onClick={toggleSuggestions}
+          >
+            Browse
+          </button>
+        </div>
         <AutocompleteList
           id={`${tagEditorId}-AutocompleteList`}
           list={suggestions}

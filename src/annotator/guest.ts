@@ -835,6 +835,19 @@ export class Guest
         .catch(error => callback({ ok: false, error: error.message }));
     });
 
+    this._sidebarRPC.on('getDocumentText', callback => {
+      const readDocumentText = async () => {
+        if (!this._integration.getDocumentText) {
+          throw new Error('Document text not supported for document type');
+        }
+        return this._integration.getDocumentText();
+      };
+
+      readDocumentText()
+        .then(data => callback({ ok: true, value: data }))
+        .catch(error => callback({ ok: false, error: error.message }));
+    });
+
     // Connect to sidebar and send document info/URIs to it.
     //
     // RPC calls are deferred until a connection is made, so these steps can
