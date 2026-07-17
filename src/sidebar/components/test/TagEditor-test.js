@@ -161,7 +161,7 @@ describe('TagEditor', () => {
       assert.equal(wrapper.find('AutocompleteList').prop('open'), false);
     });
 
-    it('closes the suggestions when deleting <input> value', () => {
+    it('shows all suggestions when deleting <input> value', () => {
       const wrapper = createComponent();
       wrapper.find('input').instance().value = 'tag3';
       typeInput(wrapper);
@@ -172,7 +172,8 @@ describe('TagEditor', () => {
       wrapper
         .find('input')
         .simulate('input', { inputType: 'deleteContentBackward' });
-      assert.equal(wrapper.find('AutocompleteList').prop('open'), false);
+      assert.equal(wrapper.find('AutocompleteList').prop('open'), true);
+      assert.calledWith(fakeTagsService.filter, '');
     });
 
     it('does not close the suggestions when deleting only part of the <input> value', () => {
@@ -196,17 +197,32 @@ describe('TagEditor', () => {
       assert.equal(wrapper.find('AutocompleteList').prop('open'), true);
     });
 
-    it('does not open the suggestions on focus if <input> is empty', () => {
+    it('opens all suggestions on focus if <input> is empty', () => {
       const wrapper = createComponent();
       wrapper.find('input').simulate('focus', {});
-      assert.equal(wrapper.find('AutocompleteList').prop('open'), false);
+      assert.equal(wrapper.find('AutocompleteList').prop('open'), true);
+      assert.calledWith(fakeTagsService.filter, '');
     });
 
-    it('does not open the suggestions on focus if <input> value is only white space', () => {
+    it('opens all suggestions on focus if <input> value is only white space', () => {
       const wrapper = createComponent();
       wrapper.find('input').instance().value = ' ';
       wrapper.find('input').simulate('focus', {});
-      assert.equal(wrapper.find('AutocompleteList').prop('open'), false);
+      assert.equal(wrapper.find('AutocompleteList').prop('open'), true);
+      assert.calledWith(fakeTagsService.filter, '');
+    });
+
+    it('opens suggestions from the dropdown button', () => {
+      const wrapper = createComponent();
+
+      wrapper
+        .find('button[aria-label="Show tag suggestions"]')
+        .props()
+        .onClick();
+      wrapper.update();
+
+      assert.equal(wrapper.find('AutocompleteList').prop('open'), true);
+      assert.calledWith(fakeTagsService.filter, '');
     });
 
     it('closes the suggestions when focus is removed from the <input> field', () => {
@@ -232,6 +248,20 @@ describe('TagEditor', () => {
       wrapper.find('input').instance().value = 'non-empty';
       typeInput(wrapper);
       assert.deepEqual(wrapper.find('AutocompleteList').prop('list'), ['tag4']);
+    });
+
+    it('merges matching group tags with locally remembered suggestions', () => {
+      fakeTagsService.filter.returns(['tag4']);
+      const wrapper = createComponent({
+        suggestedTags: ['Theme', 'Setting', 'tag4'],
+      });
+      wrapper.find('input').instance().value = 't';
+      typeInput(wrapper);
+
+      assert.deepEqual(wrapper.find('AutocompleteList').prop('list'), [
+        'tag4',
+        'Theme',
+      ]);
     });
   });
 

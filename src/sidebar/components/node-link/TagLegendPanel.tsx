@@ -1,7 +1,7 @@
 import { Button, Card, CloseButton } from '@hypothesis/frontend-shared';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 
-import { colorForTag } from '../../node-link/graph-model';
+import { colorForTag, distinctTagColors } from '../../node-link/graph-model';
 import {
   emptyNodeLinkState,
   relationshipsForTag,
@@ -111,7 +111,7 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   const groupId = store.focusedGroupId();
   const focusedGroup = store.focusedGroup();
   const annotations = store.savedAnnotations();
-  const tagColors = store.tagInventorySchemaTagColors();
+  const schemaTagColors = store.tagInventorySchemaTagColors();
 
   const [status, setStatus] = useState<LoadStatus>('idle');
   const [message, setMessage] = useState('');
@@ -162,6 +162,10 @@ function TagLegendPanel({ nodeLinkState }: TagLegendPanelProps) {
   const tags = useMemo(
     () => tagsForNodeLinkState(state, annotations, groupId),
     [annotations, groupId, state],
+  );
+  const tagColors = useMemo(
+    () => distinctTagColors(tags, schemaTagColors),
+    [schemaTagColors, tags],
   );
 
   useEffect(() => {

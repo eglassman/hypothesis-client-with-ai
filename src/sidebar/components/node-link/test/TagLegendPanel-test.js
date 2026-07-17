@@ -5,7 +5,7 @@ import {
 } from '@hypothesis/frontend-testing';
 import sinon from 'sinon';
 
-import { colorForTag } from '../../../node-link/graph-model';
+import { colorForTag, distinctTagColors } from '../../../node-link/graph-model';
 import { emptyNodeLinkState } from '../../../node-link/graph-state';
 import TagLegendPanel, { $imports } from '../TagLegendPanel';
 
@@ -14,7 +14,7 @@ describe('TagLegendPanel', () => {
   let fakeNodeLinkState;
   const tagColors = {
     Character: 'rgba(140, 209, 125, 0.38)',
-    Theme: 'rgba(78, 121, 167, 0.38)',
+    Theme: 'rgba(140, 209, 125, 0.38)',
   };
 
   function createComponent() {
@@ -110,14 +110,22 @@ describe('TagLegendPanel', () => {
 
     const characterBadge = wrapper.find('span[title="Character"]').first();
     const themeBadge = wrapper.find('span[title="Theme"]').first();
+    const resolvedColors = distinctTagColors(
+      ['Action', 'Character', 'Theme'],
+      tagColors,
+    );
 
     assert.equal(
       characterBadge.prop('style').backgroundColor,
-      colorForTag('Character', tagColors),
+      colorForTag('Character', resolvedColors),
     );
     assert.equal(
       themeBadge.prop('style').backgroundColor,
-      colorForTag('Theme', tagColors),
+      colorForTag('Theme', resolvedColors),
+    );
+    assert.notEqual(
+      characterBadge.prop('style').backgroundColor,
+      themeBadge.prop('style').backgroundColor,
     );
   });
 

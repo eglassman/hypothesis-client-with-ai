@@ -4,24 +4,25 @@ import sinon from 'sinon';
 import { emptyNodeLinkState } from '../../../node-link/graph-state';
 import {
   $imports,
+  ManualEdgeViewport,
   NodeLinkEditor,
   NodeLinkGraphPage,
   routeGroupToApply,
 } from '../NodeLinkGraphPage';
 
+function tagNode(tag) {
+  return {
+    id: `tag:${tag}`,
+    tag,
+    quoteCount: 1,
+    documentCount: 1,
+    documentUris: ['https://example.com/doc'],
+    descriptive: false,
+  };
+}
+
 describe('NodeLinkEditor', () => {
   const tagColors = {};
-
-  function tagNode(tag) {
-    return {
-      id: `tag:${tag}`,
-      tag,
-      quoteCount: 1,
-      documentCount: 1,
-      documentUris: ['https://example.com/doc'],
-      descriptive: false,
-    };
-  }
 
   function createComponent({ semanticState, onSaveState = sinon.stub() } = {}) {
     const state =
@@ -157,6 +158,83 @@ describe('NodeLinkEditor', () => {
   });
 });
 
+describe('ManualEdgeViewport', () => {
+  function createComponent({ selectedTag = '' } = {}) {
+    const graph = {
+      tags: ['Action', 'Character', 'Theme', 'Setting'].map(tagNode),
+      quotes: [],
+      documents: [],
+      manualEdges: [
+        {
+          id: 'setting-character',
+          sourceTag: 'Setting',
+          targetTag: 'Character',
+          connectionType: 'contains',
+        },
+        {
+          id: 'action-theme',
+          sourceTag: 'Action',
+          targetTag: 'Theme',
+          connectionType: 'shapes',
+        },
+      ],
+      annotationCount: 0,
+    };
+    return mount(
+      <ManualEdgeViewport
+        graph={graph}
+        spotlightTag=""
+        selectedTag={selectedTag}
+        selectedEdgeId=""
+        tagColors={{}}
+        onSelectEdge={sinon.stub()}
+      />,
+    );
+  }
+
+  function listedEdgeIds(wrapper) {
+    return wrapper
+      .find('[data-testid="manual-edge-viewport-list"] li')
+      .map(item => item.prop('data-edge-id'));
+  }
+
+  it('puts relationships connected to the selected tag first', () => {
+    const wrapper = createComponent({ selectedTag: 'Character' });
+
+    assert.deepEqual(listedEdgeIds(wrapper), [
+      'setting-character',
+      'action-theme',
+    ]);
+    assert.include(
+      wrapper.find('li[data-edge-id="action-theme"] button').prop('className'),
+      'opacity-50',
+    );
+  });
+
+  it('filters and sorts manual relationships in the large viewport', () => {
+    const wrapper = createComponent();
+    const filter = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'manual-edge-viewport-filter');
+
+    filter.props().onChange('shapes');
+    wrapper.update();
+    assert.deepEqual(listedEdgeIds(wrapper), ['action-theme']);
+
+    filter.props().onChange('');
+    wrapper
+      .find('select[aria-label="Sort manual relationships"]')
+      .props()
+      .onChange({ target: { value: 'target' } });
+    wrapper.update();
+
+    assert.deepEqual(listedEdgeIds(wrapper), [
+      'setting-character',
+      'action-theme',
+    ]);
+  });
+});
+
 describe('routeGroupToApply', () => {
   it('does not reapply a route group that already initialized the selection', () => {
     assert.equal(routeGroupToApply('__world__', '__world__'), '');
@@ -254,7 +332,9 @@ describe('NodeLinkGraphPage', () => {
       .first()
       .props()
       .onChange({ target: { value: 'private-group' } });
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitFor(() =>
+      fakeNodeLinkState.fetchGroupAnnotations.calledWith('private-group'),
+    );
     wrapper.update();
 
     assert.equal(wrapper.find('select').first().prop('value'), 'private-group');
@@ -309,7 +389,7 @@ describe('NodeLinkGraphPage', () => {
 
     const nodeFinder = wrapper
       .find('SearchableCombobox')
-      .filterWhere(input => input.prop('id') === 'node-link-node-finder');
+      .filterWhere(input => input.prop('id') === 'node-link-spotlight');
     assert.deepEqual(nodeFinder.prop('options'), ['Character']);
 
     wrapper.find('#node-link-editor-tab').props().onClick();
@@ -365,5 +445,208 @@ describe('NodeLinkGraphPage', () => {
       'Character',
     );
     assert.calledWith(detailsPanel.scrollTo, { top: 0 });
+  });
+
+  it('isolates and centers a selected tag neighborhood', async () => {
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
+        tags: ['Character'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-action',
+        uri: 'https://example.com/doc',
+        exact: 'Action evidence',
+        tags: ['Action'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-theme',
+        uri: 'https://example.com/doc',
+        exact: 'Theme evidence',
+        tags: ['Theme'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-setting',
+        uri: 'https://example.com/doc',
+        exact: 'Setting evidence',
+        tags: ['Setting'],
+      }),
+    ]);
+    fakeNodeLinkState.loadState.resolves({
+      status: 'loaded',
+      state: emptyNodeLinkState({
+        selectedGroupId: '__world__',
+        tagEdges: [
+          {
+            id: 'character-action',
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+          {
+            id: 'theme-character',
+            sourceTag: 'Theme',
+            targetTag: 'Character',
+            connectionType: 'shapes',
+          },
+          {
+            id: 'action-setting',
+            sourceTag: 'Action',
+            targetTag: 'Setting',
+            connectionType: 'occurs in',
+          },
+        ],
+      }),
+      annotationId: 'state-ann',
+      stateUri: 'https://hypothesis-node-link.local/state/group/__world__',
+    });
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 4;
+    });
+
+    const spotlight = wrapper
+      .find('SearchableCombobox')
+      .filterWhere(input => input.prop('id') === 'node-link-spotlight');
+    spotlight.props().onChange('Character');
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 3;
+    });
+
+    assert.include(wrapper.text(), '3 of 4 tags shown around Character');
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Clear spotlight')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.lengthOf(wrapper.find('g[role="button"]'), 4);
+  });
+
+  it('toggles the main viewport and auto-hides the sidebar for tag overview', async () => {
+    fakeStore.tagInventorySchemaTagColors.returns({
+      Action: 'rgba(80, 160, 96, 0.38)',
+      Character: 'rgba(80, 160, 96, 0.38)',
+    });
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character evidence',
+        tags: ['Character'],
+      }),
+      evidenceAnnotation({
+        id: 'ann-action',
+        uri: 'https://example.com/doc',
+        exact: 'Action evidence',
+        tags: ['Action'],
+      }),
+    ]);
+    fakeNodeLinkState.loadState.resolves({
+      status: 'loaded',
+      state: emptyNodeLinkState({
+        selectedGroupId: '__world__',
+        tagEdges: [
+          {
+            id: 'character-action',
+            sourceTag: 'Character',
+            targetTag: 'Action',
+            connectionType: 'motivates',
+          },
+        ],
+      }),
+      annotationId: 'state-ann',
+      stateUri: 'https://hypothesis-node-link.local/state/group/__world__',
+    });
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 2;
+    });
+
+    const sidebar = () => wrapper.find('[data-testid="node-link-sidebar"]');
+    const sidebarToggle = () =>
+      wrapper.find('[data-testid="node-link-sidebar-toggle"]');
+    const graphNodeColor = tag =>
+      wrapper
+        .find('g[role="button"]')
+        .filterWhere(node => node.text().includes(tag))
+        .first()
+        .find('rect')
+        .prop('fill');
+
+    assert.isFalse(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Hide sidebar');
+    assert.notEqual(graphNodeColor('Action'), graphNodeColor('Character'));
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Manual relationships')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isTrue(
+      wrapper.find('[data-testid="manual-edge-viewport-list"]').exists(),
+    );
+    assert.isFalse(
+      wrapper.find('svg[aria-label="Tag relationship graph"]').exists(),
+    );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Tag overview')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('[data-testid="tag-overview"]').exists());
+    assert.lengthOf(wrapper.find('[data-testid="tag-overview"] tbody tr'), 2);
+    assert.notEqual(
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Action"]')
+        .first()
+        .prop('style').backgroundColor,
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Character"]')
+        .first()
+        .prop('style').backgroundColor,
+    );
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Graph')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
   });
 });
