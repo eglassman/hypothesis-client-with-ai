@@ -532,6 +532,10 @@ describe('NodeLinkGraphPage', () => {
   });
 
   it('toggles the main viewport and auto-hides the sidebar for tag overview', async () => {
+    fakeStore.tagInventorySchemaTagColors.returns({
+      Action: 'rgba(80, 160, 96, 0.38)',
+      Character: 'rgba(80, 160, 96, 0.38)',
+    });
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
         id: 'ann-character',
@@ -572,9 +576,17 @@ describe('NodeLinkGraphPage', () => {
     const sidebar = () => wrapper.find('[data-testid="node-link-sidebar"]');
     const sidebarToggle = () =>
       wrapper.find('[data-testid="node-link-sidebar-toggle"]');
+    const graphNodeColor = tag =>
+      wrapper
+        .find('g[role="button"]')
+        .filterWhere(node => node.text().includes(tag))
+        .first()
+        .find('rect')
+        .prop('fill');
 
     assert.isFalse(sidebar().prop('hidden'));
     assert.equal(sidebarToggle().text(), 'Hide sidebar');
+    assert.notEqual(graphNodeColor('Action'), graphNodeColor('Character'));
 
     sidebarToggle().props().onClick();
     wrapper.update();
@@ -610,6 +622,16 @@ describe('NodeLinkGraphPage', () => {
 
     assert.isTrue(wrapper.find('[data-testid="tag-overview"]').exists());
     assert.lengthOf(wrapper.find('[data-testid="tag-overview"] tbody tr'), 2);
+    assert.notEqual(
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Action"]')
+        .first()
+        .prop('style').backgroundColor,
+      wrapper
+        .find('[data-testid="tag-overview"] span[title="Character"]')
+        .first()
+        .prop('style').backgroundColor,
+    );
     assert.isTrue(sidebar().prop('hidden'));
     assert.equal(sidebarToggle().text(), 'Show sidebar');
 

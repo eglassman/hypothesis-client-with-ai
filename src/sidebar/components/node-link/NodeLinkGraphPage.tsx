@@ -8,6 +8,7 @@ import {
   buildNodeLinkGraph,
   buildSpotlightGraphLayout,
   buildTagGraphLayout,
+  distinctTagColors,
   spotlightNodeLinkGraph,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
@@ -1934,7 +1935,7 @@ export function NodeLinkGraphPage({
   const groups = store.allGroups();
   const hasFetchedProfile = store.hasFetchedProfile();
   const isLoggedIn = store.isLoggedIn();
-  const tagColors = store.tagInventorySchemaTagColors();
+  const schemaTagColors = store.tagInventorySchemaTagColors();
   const routeGroup = routeGroupParam(routeParams);
   const focusedGroupId = store.focusedGroupId() || '';
   const canonicalRouteGroup = routeGroup
@@ -2108,6 +2109,14 @@ export function NodeLinkGraphPage({
   const groupGraph = useMemo(
     () => buildNodeLinkGraph(annotations, semanticState),
     [annotations, semanticState],
+  );
+  const tagColors = useMemo(
+    () =>
+      distinctTagColors(
+        groupGraph.tags.map(tag => tag.tag),
+        schemaTagColors,
+      ),
+    [groupGraph.tags, schemaTagColors],
   );
   const spotlightGraph = useMemo(
     () => spotlightNodeLinkGraph(graph, spotlightTag),

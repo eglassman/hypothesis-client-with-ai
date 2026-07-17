@@ -4,6 +4,7 @@ import {
   buildSpotlightGraphLayout,
   buildTagGraphLayout,
   colorForTag,
+  distinctTagColors,
   documentLabelFromUrl,
   spotlightNodeLinkGraph,
 } from '../graph-model';
@@ -42,6 +43,36 @@ describe('node-link graph model', () => {
     assert.equal(
       colorForTag('Character', { Character: 'rgba(140, 209, 125, 0.38)' }),
       '#8cd17d',
+    );
+  });
+
+  it('uses nearby light and dark shades for duplicate tag colors', () => {
+    const baseColor = 'rgba(80, 160, 96, 0.38)';
+    const resolved = distinctTagColors(['Theme', 'Character'], {
+      Character: baseColor,
+      Theme: baseColor,
+    });
+    const channelSum = color =>
+      color
+        .slice(1)
+        .match(/.{2}/g)
+        .reduce((sum, channel) => sum + parseInt(channel, 16), 0);
+    const baseChannelSum = channelSum(
+      colorForTag('Character', {
+        Character: baseColor,
+      }),
+    );
+    const resolvedChannelSums = Object.values(resolved).map(channelSum);
+
+    assert.notEqual(resolved.Character, resolved.Theme);
+    assert.isAbove(Math.max(...resolvedChannelSums), baseChannelSum);
+    assert.isBelow(Math.min(...resolvedChannelSums), baseChannelSum);
+    assert.deepEqual(
+      distinctTagColors(['Character', 'Theme'], {
+        Character: baseColor,
+        Theme: baseColor,
+      }),
+      resolved,
     );
   });
 

@@ -234,9 +234,78 @@ export function colorForTag(
   tagColors: Record<string, string> = {},
 ) {
   const normalizedTag = tag.trim();
-  return rgbaStringToHexColorInput(
-    tagColors[normalizedTag] ?? highlightRgbaFromString(normalizedTag),
+  const color =
+    tagColors[normalizedTag] ?? highlightRgbaFromString(normalizedTag);
+  const hexMatch = color.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+  if (hexMatch) {
+    const hex = hexMatch[1].toLowerCase();
+    return hex.length === 3
+      ? `#${[...hex].map(channel => channel.repeat(2)).join('')}`
+      : `#${hex}`;
+  }
+  return rgbaStringToHexColorInput(color);
+}
+
+function nearbyShade(hex: string, variantIndex: number) {
+  const value = parseInt(hex.slice(1), 16);
+  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  const lighten = variantIndex % 2 === 0;
+  const amount = Math.min(0.08 * (Math.floor(variantIndex / 2) + 1), 0.8);
+  const target = lighten ? 255 : 0;
+  const adjusted = channels.map(channel =>
+    Math.round(channel + (target - channel) * amount),
   );
+  return `#${adjusted
+    .map(channel => channel.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/**
+ * Resolve tag colors so tags with the same display color get nearby shades.
+ *
+ * The result is stable regardless of input order and reserves all configured
+ * colors before choosing variants, so a generated shade does not collide with
+ * another tag's configured color.
+ */
+export function distinctTagColors(
+  tags: readonly string[],
+  tagColors: Record<string, string> = {},
+) {
+  const normalizedTags = [
+    ...new Set(
+      [...Object.keys(tagColors), ...tags]
+        .map(tag => tag.trim())
+        .filter(Boolean),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  const baseColors = new Map(
+    normalizedTags.map(tag => [tag, colorForTag(tag, tagColors)]),
+  );
+  const colorCounts = new Map<string, number>();
+  for (const color of baseColors.values()) {
+    colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+  }
+
+  const usedColors = new Set(baseColors.values());
+  const resolvedColors: Record<string, string> = {};
+  for (const tag of normalizedTags) {
+    const baseColor = baseColors.get(tag)!;
+    if (colorCounts.get(baseColor) === 1) {
+      resolvedColors[tag] = baseColor;
+      continue;
+    }
+
+    for (let variantIndex = 0; variantIndex < 40; variantIndex++) {
+      const candidate = nearbyShade(baseColor, variantIndex);
+      if (!usedColors.has(candidate)) {
+        resolvedColors[tag] = candidate;
+        usedColors.add(candidate);
+        break;
+      }
+    }
+    resolvedColors[tag] ??= baseColor;
+  }
+  return resolvedColors;
 }
 
 /** Return the selected tag, its immediate neighbors and their connecting edges. */
