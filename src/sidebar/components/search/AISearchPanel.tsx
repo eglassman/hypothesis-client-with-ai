@@ -619,18 +619,25 @@ function AISearchPanel({
               if (alreadyCovered) {
                 continue;
               }
-              // Create a new ai-pending annotation for this extra tag with an
-              // empty text/query so it doesn't inherit the primary tag's query.
+              // Reuse the query from an existing approved annotation for this
+              // tag so the new pending annotation appears under the same row,
+              // not as a separate "No query" row.
+              const existingQuery =
+                fewShotAnnotations.find(
+                  a =>
+                    (a.tags ?? []).includes(extraTag) &&
+                    (a.tags ?? []).includes('ai-user-approved'),
+                )?.text ?? '';
               const extraPayload = {
                 group: groupId,
                 uri: documentUri,
                 target: ann.target,
-                text: '',
+                text: existingQuery,
                 tags: expectedTagsForStrictAISearchPending(extraTag),
                 permissions: sharedPermissions(userid, groupId),
               };
               const newAnn = await api.annotation.create({}, extraPayload);
-              console.log('[AISearch Step 2] created annotation for', extraTag, 'id:', newAnn.id);
+              console.log('[AISearch Step 2] created annotation for', extraTag, 'query:', existingQuery, 'id:', newAnn.id);
               store.addAnnotations([newAnn]);
             }
           }
