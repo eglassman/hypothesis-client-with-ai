@@ -43,6 +43,8 @@ export type ClassifyQuotesForTagsRequest = {
   quotes: string[];
   /** Candidate tags to check against each quote (do not include the primary tag). */
   tags: string[];
+  /** Optional description for each tag, keyed by tag name. */
+  tagDescriptions?: Record<string, string>;
   apiKey: string;
   signal?: AbortSignal;
 };
@@ -317,7 +319,7 @@ Return one decision per input case with matching before/after strings.`,
   async classifyQuotesForOtherTags(
     request: ClassifyQuotesForTagsRequest,
   ): Promise<QuoteTagClassification[]> {
-    const { quotes, tags, apiKey, signal } = request;
+    const { quotes, tags, tagDescriptions, apiKey, signal } = request;
     if (!quotes.length || !tags.length) {
       return [];
     }
@@ -327,7 +329,12 @@ Return one decision per input case with matching before/after strings.`,
       dangerouslyAllowBrowser: true,
     });
 
-    const tagList = tags.map(t => `- ${t}`).join('\n');
+    const tagList = tags
+      .map(t => {
+        const desc = tagDescriptions?.[t];
+        return desc ? `- ${t}: ${desc}` : `- ${t}`;
+      })
+      .join('\n');
     const quoteList = quotes.map((q, i) => `[${i}] "${q}"`).join('\n');
 
     const startedAt = Date.now();

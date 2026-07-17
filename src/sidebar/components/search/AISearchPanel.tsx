@@ -564,16 +564,24 @@ function AISearchPanel({
       }
 
       // Step 2: for each returned quote, identify any OTHER group tags that also apply.
-      // This never creates new annotations — it only adds tags to already-created ones.
-      // Collect all unique positive schema tags seen across the group's annotations,
-      // excluding the primary tag already on these annotations and internal tags.
+      // Collect all unique positive schema tags from any annotation in the group
+      // (not restricted to approved), plus a description map (preferring approved).
       const allGroupTagsSet = new Set<string>();
+      const tagDescriptions: Record<string, string> = {};
       for (const ann of fewShotAnnotations) {
-        if (!(ann.tags ?? []).includes('ai-user-approved')) {
-          continue;
-        }
-        for (const t of positiveSchemaTags(ann.tags ?? [])) {
+        const annTags = ann.tags ?? [];
+        const isAiAnnotation =
+          annTags.includes('ai-pending') || annTags.includes('ai-user-approved');
+        for (const t of positiveSchemaTags(annTags)) {
           allGroupTagsSet.add(t);
+          // Only treat ann.text as a query/description for AI-created annotations.
+          // For manually-applied annotations, ann.text is a personal note, not a query.
+          if (isAiAnnotation && ann.text?.trim()) {
+            // Approved annotations win over pending ones.
+            if (annTags.includes('ai-user-approved') || !tagDescriptions[t]) {
+              tagDescriptions[t] = ann.text.trim();
+            }
+          }
         }
       }
       const otherTags = [...allGroupTagsSet].filter(
@@ -588,6 +596,7 @@ function AISearchPanel({
             await claude.classifyQuotesForOtherTags({
               quotes: quoteTexts,
               tags: otherTags,
+              tagDescriptions,
               apiKey: claude.apiKey(),
               signal,
             });
@@ -619,15 +628,10 @@ function AISearchPanel({
               if (alreadyCovered) {
                 continue;
               }
-              // Reuse the query from an existing approved annotation for this
-              // tag so the new pending annotation appears under the same row,
-              // not as a separate "No query" row.
-              const existingQuery =
-                fewShotAnnotations.find(
-                  a =>
-                    (a.tags ?? []).includes(extraTag) &&
-                    (a.tags ?? []).includes('ai-user-approved'),
-                )?.text ?? '';
+              // Reuse the known description for this tag (built above from all
+              // annotations, preferring approved) so the new pending annotation
+              // lands under the existing row rather than creating "No query".
+              const existingQuery = tagDescriptions[extraTag] ?? '';
               const extraPayload = {
                 group: groupId,
                 uri: documentUri,
