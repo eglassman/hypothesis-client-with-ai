@@ -86,6 +86,20 @@ function mergeAdjacentSpans(spans: ApiSpan[]): ApiSpan[] {
   return merged;
 }
 
+async function fetchSuggestCategories(segments: string[]): Promise<CategoryRow[]> {
+  const response = await fetch(
+    'https://phrase-labeler.onrender.com/suggest-categories',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ segments }) },
+  );
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Category suggestion error: ${response.status} ${errText}`);
+  }
+  const data = await response.json();
+  const cats = (data.categories ?? []) as { label: string; description: string }[];
+  return cats.map(c => ({ name: c.label, description: c.description }));
+}
+
 async function fetchSpansBatch(
   sentences: string[],
   categories?: string[],
@@ -115,6 +129,24 @@ type LabelIndex = {
   labelColors: Record<number, string>;
   labelNames: Record<number, string>;
 };
+
+function resolveSourceTitle(ann: SavedAnnotation): { title: string; year: string } {
+  const rawTitle = ann.document?.title;
+  const title = (Array.isArray(rawTitle) ? rawTitle[0] : rawTitle) || ann.uri || '';
+  const year = ann.created ? String(new Date(ann.created).getFullYear()) : '';
+  return { title, year };
+}
+
+function sourceLabel(ann: SavedAnnotation): string {
+  const { title, year } = resolveSourceTitle(ann);
+  const prefix = title.slice(0, 10) + '...';
+  return year ? `${prefix}, ${year}` : prefix;
+}
+
+function sourceTooltip(ann: SavedAnnotation): string {
+  const { title, year } = resolveSourceTitle(ann);
+  return year ? `${title}, ${year}` : title;
+}
 
 function buildLabelIndex(allSpans: ApiSpan[][], categoryNames?: string[]): LabelIndex {
   const seenIds = new Set<number>();
@@ -195,6 +227,8 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
   const [rawSpanMap, setRawSpanMap] = useState<Map<string, ApiSpan[]>>(new Map());
   const [labelIndex, setLabelIndex] = useState<LabelIndex>({ labelColors: {}, labelNames: {} });
   const [isHighlighting, setIsHighlighting] = useState(false);
+  const [isGeneratingLabels, setIsGeneratingLabels] = useState(false);
+  const [generateLabelsError, setGenerateLabelsError] = useState<string | null>(null);
   const [highlightError, setHighlightError] = useState<string | null>(null);
   const [renderMode, setRenderMode] = useState<RenderMode>('highlight');
   const [activeLabels, setActiveLabels] = useState<Set<number> | undefined>(undefined);
@@ -203,6 +237,7 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
   const [highlightedCategories, setHighlightedCategories] = useState<string[] | undefined>(undefined);
   const [highlightedDescriptions, setHighlightedDescriptions] = useState<string[] | undefined>(undefined);
 
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const alignCategory = searchCategoryIds.length >= 1 ? searchCategoryIds[0] : null;
   const contentRef = useRef<HTMLDivElement>(null);
   const alignedScrollRef = useRef<HTMLDivElement>(null);
@@ -240,9 +275,12 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
     const container = alignedScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
-      const firstTd = container.querySelector('td') as HTMLElement | null;
-      if (!firstTd) return;
-      container.scrollLeft = firstTd.getBoundingClientRect().width - container.clientWidth / 2;
+      const tds = container.querySelectorAll('tr:first-child td');
+      const stickyTd = tds[0] as HTMLElement | null;
+      const leftTd = tds[1] as HTMLElement | null;
+      if (!leftTd) return;
+      const stickyW = stickyTd?.offsetWidth ?? 0;
+      container.scrollLeft = leftTd.offsetWidth - (container.clientWidth - stickyW) / 2;
     });
   }, [alignCategory, searchCategoryIds.length, isFullWidth, rawSpanMap]);
 
@@ -278,7 +316,17 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
     setIsHighlighting(true);
     setHighlightError(null);
     try {
-      const validRows = categoryRows.filter(r => r.name.trim().length > 0);
+      let validRows = categoryRows.filter(r => r.name.trim().length > 0);
+
+      if (validRows.length === 0) {
+        const allSentences = annotations
+          .map(ann => (annotationQuote(ann) ?? '').trim())
+          .filter(s => s.length > 0);
+        const suggested = await fetchSuggestCategories(allSentences);
+        setCategoryRows(suggested);
+        validRows = suggested;
+      }
+
       const categories = validRows.length > 0 ? validRows.map(r => r.name.trim()) : undefined;
       const categoryDescriptions = validRows.length > 0 ? validRows.map(r => r.description.trim()) : undefined;
 
@@ -327,6 +375,22 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
       setHighlightError(err instanceof Error ? err.message : 'Highlighting failed');
     } finally {
       setIsHighlighting(false);
+    }
+  };
+
+  const handleGenerateLabels = async () => {
+    setIsGeneratingLabels(true);
+    setGenerateLabelsError(null);
+    try {
+      const sentences = annotations
+        .map(ann => (annotationQuote(ann) ?? '').trim())
+        .filter(s => s.length > 0);
+      const suggested = await fetchSuggestCategories(sentences);
+      setCategoryRows(prev => [...prev, ...suggested]);
+    } catch (err) {
+      setGenerateLabelsError(err instanceof Error ? err.message : 'Label generation failed');
+    } finally {
+      setIsGeneratingLabels(false);
     }
   };
 
@@ -416,9 +480,20 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
                 >×</button>
               </div>
             ))}
-            <button className="text-xs text-left text-color-text-light hover:text-color-text mt-0.5" onClick={addCategory}>
-              + Add category
-            </button>
+            <div className="flex items-center gap-x-1 mt-0.5">
+              <button className="text-xs text-color-text-light hover:text-color-text" onClick={addCategory}>
+                + Add Subtag
+              </button>
+              <span className="text-xs text-color-text-light">|</span>
+              <button
+                className="text-xs text-color-text-light hover:text-color-text disabled:opacity-50"
+                onClick={handleGenerateLabels}
+                disabled={isGeneratingLabels}
+              >
+                {isGeneratingLabels ? 'Suggesting…' : 'Suggest Subtags'}
+              </button>
+              {generateLabelsError && <span className="text-xs ml-1" style={{ color: '#dc2626' }}>{generateLabelsError}</span>}
+            </div>
           </div>
           </div>)} {/* end isControlsExpanded */}
 
@@ -553,13 +628,16 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
                       ({ left, right } = splitAtOffset(excerptText, labeledSpans, firstAlignSpan?.start ?? 0));
                     }
                     return [(
-                      <tr key={ann.id} style={{ backgroundColor: 'white' }}>
-                        <td className="italic text-color-text-light text-xs" style={{ paddingRight: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid #e5e7eb' }}>
+                      <tr key={ann.id} style={{ backgroundColor: 'white', position: 'relative', zIndex: hoveredRowId === ann.id ? 50 : 0 }} onMouseEnter={() => setHoveredRowId(ann.id)} onMouseLeave={() => setHoveredRowId(null)}>
+                        <td style={{ position: 'sticky', left: 0, zIndex: 1, backgroundColor: 'white', padding: '4px 6px', whiteSpace: 'nowrap', fontSize: '10px', color: '#9ca3af', minWidth: '60px', maxWidth: '100px' }}>
+                          <span title={sourceTooltip(ann)}>{sourceLabel(ann)}</span>
+                        </td>
+                        <td className="italic text-color-text-light text-xs" style={{ paddingRight: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {left.spans.length > 0 ? (
                             <HighlightedSentence original={left.text} spans={left.spans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
                           ) : left.text}
                         </td>
-                        <td className="italic text-color-text-light text-xs" style={{ paddingLeft: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap', borderBottom: '1px solid #e5e7eb' }}>
+                        <td className="italic text-color-text-light text-xs" style={{ paddingLeft: '4px', paddingTop: '4px', paddingBottom: '4px', whiteSpace: 'nowrap' }}>
                           {right.spans.length > 0 ? (
                             <HighlightedSentence original={right.text} spans={right.spans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
                           ) : right.text}
@@ -650,7 +728,7 @@ export function GroupAnnotationsTab({ tagInventoryGroupSync }: GroupAnnotationsT
       tagMap.get(tag)!.push(ann);
     }
   }
-  const sortedTags = [...tagMap.keys()].filter(t => t !== '').sort((a, b) => a.localeCompare(b));
+  const sortedTags = [...tagMap.keys()].filter(t => t !== '' && !t.startsWith('node-link-state')).sort((a, b) => a.localeCompare(b));
   if (tagMap.has('')) sortedTags.push('');
   const normalizedTagFilter = tagFilter.trim().toLocaleLowerCase();
   const filteredTags = normalizedTagFilter

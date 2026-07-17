@@ -60,6 +60,7 @@ function HypothesisApp({
   const isThemeClean = settings.theme === 'clean';
 
   const isSidebar = route === 'sidebar';
+  const isFullWidth = store.isSidebarFullWidth();
   const currentPDFUri = useMemo(
     () =>
       searchUris.find(uri => /\.pdf($|[?#])/i.test(uri)) ??
@@ -193,7 +194,7 @@ function HypothesisApp({
           isSidebar={isSidebar}
         />
       )}
-      <div className="container">
+      <div className={isFullWidth ? 'px-[100px]' : 'container'}>
         <ToastMessages />
         <HelpPanel />
         <SearchPanel />
