@@ -531,7 +531,7 @@ describe('NodeLinkGraphPage', () => {
     assert.lengthOf(wrapper.find('g[role="button"]'), 4);
   });
 
-  it('toggles the main viewport between the graph and relationship list', async () => {
+  it('toggles the main viewport between graph, relationships and tag overview', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
         id: 'ann-character',
@@ -582,5 +582,15 @@ describe('NodeLinkGraphPage', () => {
     assert.isFalse(
       wrapper.find('svg[aria-label="Tag relationship graph"]').exists(),
     );
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Tag overview')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isTrue(wrapper.find('[data-testid="tag-overview"]').exists());
+    assert.lengthOf(wrapper.find('[data-testid="tag-overview"] tbody tr'), 2);
   });
 });

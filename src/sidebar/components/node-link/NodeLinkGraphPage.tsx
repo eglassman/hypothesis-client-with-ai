@@ -8,7 +8,6 @@ import {
   buildNodeLinkGraph,
   buildSpotlightGraphLayout,
   buildTagGraphLayout,
-  colorForTag,
   spotlightNodeLinkGraph,
 } from '../../node-link/graph-model';
 import type { NodeLinkGraph, TagLayoutNode } from '../../node-link/graph-model';
@@ -30,13 +29,15 @@ import type { SessionService } from '../../services/session';
 import type { ToastMessengerService } from '../../services/toast-messenger';
 import { useSidebarStore } from '../../store';
 import { SearchableCombobox } from '../SearchableCombobox';
+import { RelationshipSentence, TagBadge } from './RelationshipSentence';
 import { TagCombobox } from './TagCombobox';
+import { TagOverviewViewport } from './TagOverviewViewport';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type AddMode = 'edge' | 'tag';
 type SidebarView = 'details' | 'edit';
-type ViewportView = 'graph' | 'edges';
+type ViewportView = 'graph' | 'edges' | 'overview';
 type ManualEdgeSort = 'source' | 'target' | 'relationship';
 type PendingDelete =
   | { type: 'edge'; id: string }
@@ -265,40 +266,6 @@ function splitTagLines(tag: string) {
 
   return lines.map((line, index) =>
     index === 1 && line.length > 22 ? `${line.slice(0, 19)}...` : line,
-  );
-}
-
-function TagBadge({
-  tag,
-  tagColors,
-}: {
-  tag: string;
-  tagColors: Record<string, string>;
-}) {
-  return (
-    <span
-      className="inline-block max-w-full truncate rounded-full px-2.5 py-0.5 font-bold text-white"
-      style={{ backgroundColor: colorForTag(tag, tagColors) }}
-      title={tag}
-    >
-      {tag}
-    </span>
-  );
-}
-
-function RelationshipSentence({
-  edge,
-  tagColors,
-}: {
-  edge: ManualTagEdge;
-  tagColors: Record<string, string>;
-}) {
-  return (
-    <span className="inline-flex max-w-full flex-wrap items-center gap-2">
-      <TagBadge tag={edge.sourceTag} tagColors={tagColors} />
-      <strong>{edge.connectionType}</strong>
-      <TagBadge tag={edge.targetTag} tagColors={tagColors} />
-    </span>
   );
 }
 
@@ -2392,6 +2359,19 @@ export function NodeLinkGraphPage({
                 >
                   Manual relationships
                 </button>
+                <button
+                  className={classnames(
+                    'rounded px-3 py-1.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-brand',
+                    viewportView === 'overview'
+                      ? 'bg-white text-brand shadow-sm'
+                      : 'text-grey-6 hover:text-color-text',
+                  )}
+                  type="button"
+                  aria-pressed={viewportView === 'overview'}
+                  onClick={() => setViewportView('overview')}
+                >
+                  Tag overview
+                </button>
               </div>
               {spotlightTag && (
                 <button
@@ -2439,6 +2419,12 @@ export function NodeLinkGraphPage({
               <p className="mb-4 text-sm text-grey-6">{message}</p>
               <Button onClick={() => loadGraph(true)}>Retry</Button>
             </div>
+          ) : viewportView === 'overview' ? (
+            <TagOverviewViewport
+              graph={graph}
+              spotlightTag={spotlightTag}
+              tagColors={tagColors}
+            />
           ) : viewportView === 'edges' ? (
             <ManualEdgeViewport
               graph={graph}
