@@ -531,7 +531,7 @@ describe('NodeLinkGraphPage', () => {
     assert.lengthOf(wrapper.find('g[role="button"]'), 4);
   });
 
-  it('toggles the main viewport between graph, relationships and tag overview', async () => {
+  it('toggles the main viewport and auto-hides the sidebar for tag overview', async () => {
     fakeNodeLinkState.fetchGroupAnnotations.resolves([
       evidenceAnnotation({
         id: 'ann-character',
@@ -569,6 +569,24 @@ describe('NodeLinkGraphPage', () => {
       return wrapper.find('g[role="button"]').length === 2;
     });
 
+    const sidebar = () => wrapper.find('[data-testid="node-link-sidebar"]');
+    const sidebarToggle = () =>
+      wrapper.find('[data-testid="node-link-sidebar-toggle"]');
+
+    assert.isFalse(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Hide sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
     wrapper
       .find('button')
       .filterWhere(button => button.text() === 'Manual relationships')
@@ -592,5 +610,21 @@ describe('NodeLinkGraphPage', () => {
 
     assert.isTrue(wrapper.find('[data-testid="tag-overview"]').exists());
     assert.lengthOf(wrapper.find('[data-testid="tag-overview"] tbody tr'), 2);
+    assert.isTrue(sidebar().prop('hidden'));
+    assert.equal(sidebarToggle().text(), 'Show sidebar');
+
+    sidebarToggle().props().onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
+
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Graph')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    assert.isFalse(sidebar().prop('hidden'));
   });
 });

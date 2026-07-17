@@ -1956,12 +1956,14 @@ export function NodeLinkGraphPage({
   const [selectedEdgeId, setSelectedEdgeId] = useState('');
   const [spotlightTag, setSpotlightTag] = useState('');
   const [viewportView, setViewportView] = useState<ViewportView>('graph');
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [sidebarView, setSidebarView] = useState<SidebarView>('details');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState('');
   const detailsPanelRef = useRef<HTMLDivElement | null>(null);
   const detailsTabRef = useRef<HTMLButtonElement | null>(null);
   const editorTabRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarVisibleBeforeOverviewRef = useRef(true);
   const inspectedSelectionRef = useRef('');
   const activeLoadRef = useRef<{
     controller: AbortController;
@@ -2188,6 +2190,28 @@ export function NodeLinkGraphPage({
     clearSelection();
   };
 
+  const showViewportView = (view: ViewportView) => {
+    if (view === viewportView) {
+      return;
+    }
+
+    if (view === 'overview') {
+      sidebarVisibleBeforeOverviewRef.current = isSidebarVisible;
+      setIsSidebarVisible(false);
+    } else if (viewportView === 'overview') {
+      setIsSidebarVisible(sidebarVisibleBeforeOverviewRef.current);
+    }
+    setViewportView(view);
+  };
+
+  const toggleSidebar = () => {
+    const nextVisible = !isSidebarVisible;
+    setIsSidebarVisible(nextVisible);
+    if (viewportView !== 'overview') {
+      sidebarVisibleBeforeOverviewRef.current = nextVisible;
+    }
+  };
+
   const showSidebarView = (view: SidebarView, focusTab = false) => {
     setSidebarView(view);
     if (focusTab) {
@@ -2342,7 +2366,7 @@ export function NodeLinkGraphPage({
                   )}
                   type="button"
                   aria-pressed={viewportView === 'graph'}
-                  onClick={() => setViewportView('graph')}
+                  onClick={() => showViewportView('graph')}
                 >
                   Graph
                 </button>
@@ -2355,7 +2379,7 @@ export function NodeLinkGraphPage({
                   )}
                   type="button"
                   aria-pressed={viewportView === 'edges'}
-                  onClick={() => setViewportView('edges')}
+                  onClick={() => showViewportView('edges')}
                 >
                   Manual relationships
                 </button>
@@ -2368,20 +2392,32 @@ export function NodeLinkGraphPage({
                   )}
                   type="button"
                   aria-pressed={viewportView === 'overview'}
-                  onClick={() => setViewportView('overview')}
+                  onClick={() => showViewportView('overview')}
                 >
                   Tag overview
                 </button>
               </div>
-              {spotlightTag && (
+              <div className="flex items-center gap-2">
+                {spotlightTag && (
+                  <button
+                    className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                    type="button"
+                    onClick={clearSpotlight}
+                  >
+                    Clear spotlight
+                  </button>
+                )}
                 <button
-                  className="rounded px-2 py-1 text-xs font-bold text-brand hover:bg-brand/10 focus:outline-none focus:ring-2 focus:ring-brand"
+                  className="rounded border bg-white px-2.5 py-1 text-xs font-bold text-grey-6 hover:border-brand hover:text-brand focus:outline-none focus:ring-2 focus:ring-brand"
                   type="button"
-                  onClick={clearSpotlight}
+                  aria-controls="node-link-sidebar"
+                  aria-expanded={isSidebarVisible}
+                  data-testid="node-link-sidebar-toggle"
+                  onClick={toggleSidebar}
                 >
-                  Clear spotlight
+                  {isSidebarVisible ? 'Hide sidebar' : 'Show sidebar'}
                 </button>
-              )}
+              </div>
             </div>
             <div className="mt-2 text-sm text-grey-6">
               {status === 'loading'
@@ -2448,7 +2484,15 @@ export function NodeLinkGraphPage({
           )}
         </main>
 
-        <aside className="flex min-h-0 w-[390px] shrink-0 flex-col border-l bg-white">
+        <aside
+          id="node-link-sidebar"
+          className={classnames(
+            'min-h-0 w-[390px] shrink-0 flex-col border-l bg-white',
+            isSidebarVisible ? 'flex' : 'hidden',
+          )}
+          data-testid="node-link-sidebar"
+          hidden={!isSidebarVisible}
+        >
           <header className="flex items-start justify-between gap-3 border-b bg-grey-1 px-4 py-3">
             <div className="min-w-0" data-testid="node-link-selection-summary">
               <div className="text-xs font-bold uppercase text-grey-6">
