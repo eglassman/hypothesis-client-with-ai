@@ -359,6 +359,12 @@ export type IntegrationBase = {
    * Used to send paywalled or session-gated PDFs to Claude from the browser.
    */
   getPdfBytes?(): Promise<Uint8Array>;
+
+  /**
+   * Return visible document text from the guest frame. Implemented for HTML
+   * pages so Claude can search paywalled content Anthropic cannot download.
+   */
+  getDocumentText?(): Promise<string>;
 };
 
 /** Events which {@link Integration}s may emit. */

@@ -95,6 +95,8 @@ export type ClaudeSearchRequest = {
   documentUri?: string;
   /** Base64-encoded PDF bytes when the URL is not publicly downloadable. */
   documentPdfBase64?: string;
+  /** Plain text extracted from an HTML page in the browser (paywall fallback). */
+  documentPlainText?: string;
   query: string;
   apiKey: string;
   /** When aborted, the request should be cancelled; callers must skip post-Claude work. */
@@ -125,8 +127,15 @@ export class ClaudeService {
   async AISearchDocument(
     request: ClaudeSearchRequest,
   ): Promise<ClaudeSearchResult> {
-    const { query, documentUri, documentPdfBase64, apiKey, signal } = request;
-    if (!documentPdfBase64 && !documentUri) {
+    const {
+      query,
+      documentUri,
+      documentPdfBase64,
+      documentPlainText,
+      apiKey,
+      signal,
+    } = request;
+    if (!documentPdfBase64 && !documentPlainText && !documentUri) {
       throw new Error('No document URL provided');
     }
 
@@ -145,11 +154,21 @@ export class ClaudeService {
           },
           cache_control: { type: 'ephemeral' },
         } as const)
-      : ({
-          type: 'document',
-          source: { type: 'url', url: documentUri! },
-          cache_control: { type: 'ephemeral' },
-        } as const);
+      : documentPlainText
+        ? ({
+            type: 'document',
+            source: {
+              type: 'text',
+              media_type: 'text/plain',
+              data: documentPlainText,
+            },
+            cache_control: { type: 'ephemeral' },
+          } as const)
+        : ({
+            type: 'document',
+            source: { type: 'url', url: documentUri! },
+            cache_control: { type: 'ephemeral' },
+          } as const);
 
     const startedAt = Date.now();
     try {

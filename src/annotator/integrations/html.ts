@@ -19,6 +19,7 @@ import {
   guessMainContentArea,
   preserveScrollPosition,
 } from './html-side-by-side';
+import { extractHtmlDocumentText } from './html-document-text';
 
 // When activating side-by-side mode, make sure there is at least this amount
 // of space (in pixels) left for the document's content. Any narrower and the
@@ -296,6 +297,14 @@ export class HTMLIntegration
 
   async getMetadata() {
     return this._htmlMeta.getDocumentMetadata();
+  }
+
+  /**
+   * Visible page text for Claude when the public URL is not downloadable.
+   * Sends the full content container so article chrome is not excluded.
+   */
+  async getDocumentText(): Promise<string> {
+    return extractHtmlDocumentText(this.contentContainer());
   }
 
   async uri() {

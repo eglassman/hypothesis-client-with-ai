@@ -69,6 +69,10 @@ describe('HTMLIntegration', () => {
     return new HTMLIntegration({ features, sideBySideOptions });
   }
 
+  function createIntegrationWithContainer(container, sideBySideOptions) {
+    return new HTMLIntegration({ features, container, sideBySideOptions });
+  }
+
   function getMargins() {
     const bodyStyle = document.body.style;
     const leftMargin = bodyStyle.marginLeft
@@ -417,6 +421,53 @@ describe('HTMLIntegration', () => {
       assert.deepEqual(await integration.getMetadata(), {
         title: 'Example site',
       });
+    });
+  });
+
+  describe('#getDocumentText', () => {
+    it('returns trimmed visible text from the content container', async () => {
+      const container = document.createElement('div');
+      container.appendChild(document.createTextNode('  Hello article  '));
+      document.body.appendChild(container);
+      try {
+        const integration = createIntegrationWithContainer(container);
+        assert.equal(await integration.getDocumentText(), 'Hello article');
+      } finally {
+        container.remove();
+      }
+    });
+
+    it('includes text outside article regions', async () => {
+      const container = document.createElement('div');
+      const nav = document.createElement('div');
+      nav.appendChild(document.createTextNode('Nav chrome'));
+      const article = document.createElement('article');
+      article.appendChild(document.createTextNode('Article body'));
+      container.appendChild(nav);
+      container.appendChild(article);
+      document.body.appendChild(container);
+      try {
+        const integration = createIntegrationWithContainer(container);
+        const text = await integration.getDocumentText();
+        assert.include(text, 'Nav chrome');
+        assert.include(text, 'Article body');
+      } finally {
+        container.remove();
+      }
+    });
+
+    it('rejects when the page has no text', async () => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      try {
+        const integration = createIntegrationWithContainer(container);
+        await assert.rejects(
+          integration.getDocumentText(),
+          /No document text available/,
+        );
+      } finally {
+        container.remove();
+      }
     });
   });
 

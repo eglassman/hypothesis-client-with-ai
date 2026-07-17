@@ -268,9 +268,12 @@ describe('AISearchPanel', () => {
       .stub()
       .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.mainFrame = sinon.stub().returns({
-      uri: 'http://example.com/paper.pdf',
+      uri: 'urn:x-pdf:abc',
     });
-    fakeStore.searchUris.returns(['http://example.com/paper.pdf']);
+    fakeStore.searchUris.returns([
+      'urn:x-pdf:abc',
+      'http://example.com/paper.pdf',
+    ]);
     fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
     const fakeClaude = {
       apiKey: sinon.stub().returns('test-key'),
@@ -309,9 +312,12 @@ describe('AISearchPanel', () => {
       .stub()
       .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.mainFrame = sinon.stub().returns({
-      uri: 'http://example.com/paper.pdf',
+      uri: 'urn:x-pdf:abc',
     });
-    fakeStore.searchUris.returns(['http://example.com/paper.pdf']);
+    fakeStore.searchUris.returns([
+      'urn:x-pdf:abc',
+      'http://example.com/paper.pdf',
+    ]);
     fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
     fakeTagInventoryGroupSync.getGroupAnnotations.resolves([
       {
@@ -452,6 +458,72 @@ describe('AISearchPanel', () => {
     assert.calledOnce(fakeFrameSync.getPdfBytes);
   });
 
+  it('retries with HTML page text when Claude cannot download an HTML document URL', async () => {
+    fakeStore.profile = sinon
+      .stub()
+      .returns({ userid: 'acct:user@hypothes.is' });
+    fakeStore.mainFrame = sinon.stub().returns({
+      uri: 'https://onlinelibrary.wiley.com/doi/10.1111/example',
+    });
+    fakeStore.searchUris = sinon
+      .stub()
+      .returns([
+        'https://onlinelibrary.wiley.com/doi/10.1111/example',
+        'doi:10.1111/example',
+      ]);
+    fakeStore.aiSearchPanelSchemaTagInput.returns('methods');
+    const downloadError = new Error(
+      'Failed to extract quotes from document: 400 {"error":{"message":"Unable to download the file. Please verify the URL and try again."}}',
+    );
+    const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
+      AISearchDocument: sinon
+        .stub()
+        .onFirstCall()
+        .rejects(downloadError)
+        .onSecondCall()
+        .rejects(new Error('stop after retry')),
+    };
+    const fakeFrameSync = {
+      setTagHighlightPalette: sinon.stub(),
+      getDocumentText: sinon.stub().resolves('Article body text for Claude'),
+    };
+    const fakeToastMessenger = {
+      error: sinon.stub(),
+      notice: sinon.stub(),
+      success: sinon.stub(),
+    };
+
+    const wrapper = mount(
+      <AISearchPanel
+        annotationsService={{}}
+        experimentLog={{}}
+        frameSync={fakeFrameSync}
+        claude={fakeClaude}
+        api={{}}
+        nodeLinkState={fakeNodeLinkState}
+        toastMessenger={fakeToastMessenger}
+        tagInventoryGroupSync={fakeTagInventoryGroupSync}
+        persistedTagInventory={fakePersistedTagInventory}
+      />,
+    );
+
+    await wrapper.find('SearchField').props().onSearch('find methods');
+
+    assert.calledTwice(fakeClaude.AISearchDocument);
+    assert.calledWith(
+      fakeClaude.AISearchDocument.firstCall,
+      sinon.match({
+        documentUri: 'https://onlinelibrary.wiley.com/doi/10.1111/example',
+      }),
+    );
+    assert.calledWith(
+      fakeClaude.AISearchDocument.secondCall,
+      sinon.match({ documentPlainText: 'Article body text for Claude' }),
+    );
+    assert.calledOnce(fakeFrameSync.getDocumentText);
+  });
+
   it('passes the HTTPS PDF alias to Claude when the frame URI is a URN', async () => {
     fakeStore.profile = sinon
       .stub()
@@ -498,7 +570,11 @@ describe('AISearchPanel', () => {
       .stub()
       .returns({ userid: 'acct:user@hypothes.is' });
     fakeStore.focusedGroupId.returns('group-1');
-    fakeStore.searchUris.returns(['http://example.com/doc.pdf']);
+    fakeStore.mainFrame = sinon.stub().returns({ uri: 'urn:x-pdf:abc' });
+    fakeStore.searchUris.returns([
+      'urn:x-pdf:abc',
+      'http://example.com/doc.pdf',
+    ]);
     fakeStore.tagInventoryRows.returns([
       {
         id: 'row-1',
@@ -511,6 +587,7 @@ describe('AISearchPanel', () => {
     fakeStore.removeAnnotationIdsFromTagInventoryRows = sinon.stub();
 
     const fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
       AISearchDocument: sinon.stub().rejects(new Error('stop after cache')),
     };
     const fakeAnnotationsService = {

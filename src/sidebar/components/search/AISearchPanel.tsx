@@ -499,25 +499,44 @@ function AISearchPanel({
             documentUri: claudeDocumentUri,
           });
         } catch (urlError) {
-          if (!isPdfDocument || !isClaudeDocumentDownloadError(urlError)) {
+          if (!isClaudeDocumentDownloadError(urlError)) {
             throw urlError;
           }
-          toastMessenger.notice('Uploading PDF from browser…');
-          let documentPdfBase64: string;
-          try {
-            documentPdfBase64 = await frameSync.getPdfBytes();
-          } catch (bytesError) {
-            console.warn(
-              '[AISearch] Claude could not download URL and guest PDF read failed',
-              bytesError,
-            );
-            throw urlError;
+          if (isPdfDocument) {
+            toastMessenger.notice('Uploading PDF from browser…');
+            let documentPdfBase64: string;
+            try {
+              documentPdfBase64 = await frameSync.getPdfBytes();
+            } catch (bytesError) {
+              console.warn(
+                '[AISearch] Claude could not download URL and guest PDF read failed',
+                bytesError,
+              );
+              throw urlError;
+            }
+            // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+            claudeResult = await claude.AISearchDocument({
+              ...claudeRequestBase,
+              documentPdfBase64,
+            });
+          } else {
+            toastMessenger.notice('Uploading page text from browser…');
+            let documentPlainText: string;
+            try {
+              documentPlainText = await frameSync.getDocumentText();
+            } catch (textError) {
+              console.warn(
+                '[AISearch] Claude could not download URL and guest HTML text read failed',
+                textError,
+              );
+              throw urlError;
+            }
+            // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
+            claudeResult = await claude.AISearchDocument({
+              ...claudeRequestBase,
+              documentPlainText,
+            });
           }
-          // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
-          claudeResult = await claude.AISearchDocument({
-            ...claudeRequestBase,
-            documentPdfBase64,
-          });
         }
       } finally {
         finish();
