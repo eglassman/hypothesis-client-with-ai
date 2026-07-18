@@ -50,7 +50,6 @@ import {
   isNegativeSchemaTag,
   isTagInventoryRowVisibleInScope,
   listAnnotationsForTagInventoryRow,
-  positiveSchemaTags,
   sortTagInventoryRows,
 } from '../../helpers/tag-inventory-group';
 import {
@@ -600,13 +599,14 @@ function AISearchPanel({
       // An `ai-primary-tag:<name>` system marker is added so the inventory
       // counts extra tags under "No query" rows, not the primary tag's query row.
       if (created.length > 0 && !signal.aborted) {
-        // Build the allowed tag set from the live store so it includes tags
-        // created during this session (not just those loaded at search start).
+        // Build the allowed tag set from inventory rows so it includes every
+        // tag that exists in the group, even ones with no annotations yet in
+        // this document.
         const knownTagSet = new Set(
           store
-            .savedAnnotations()
-            .filter(a => a.group === groupId)
-            .flatMap(a => positiveSchemaTags(a.tags ?? [])),
+            .tagInventoryRows()
+            .filter(r => r.groupId === groupId && r.schemaTag.trim())
+            .map(r => r.schemaTag.trim()),
         );
         try {
           toastMessenger.notice('Identifying additional tags…');
