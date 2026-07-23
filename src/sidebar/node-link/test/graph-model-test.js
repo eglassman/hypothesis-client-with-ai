@@ -1,5 +1,7 @@
 import * as fixtures from '../../test/annotation-fixtures';
 import {
+  annotationFullQuote,
+  annotationQuote,
   buildNodeLinkGraph,
   buildSpotlightGraphLayout,
   buildTagGraphLayout,
@@ -110,6 +112,29 @@ describe('node-link graph model', () => {
     );
     assert.lengthOf(graph.documents, 2);
     assert.lengthOf(graph.quotes, 2);
+  });
+
+  it('retains complete quote evidence alongside compact display text', () => {
+    const exact = `Beginning ${'evidence '.repeat(40)}ending.`;
+    const graph = buildNodeLinkGraph(
+      [
+        annotation({
+          target: [
+            {
+              source: 'http://example.com/article.html',
+              selector: [{ type: 'TextQuoteSelector', exact }],
+            },
+          ],
+        }),
+      ],
+      emptyNodeLinkState(),
+    );
+
+    assert.equal(annotationFullQuote(graph.quotes[0].annotation), exact);
+    assert.isBelow(
+      annotationQuote(graph.quotes[0].annotation).length,
+      exact.length,
+    );
   });
 
   it('filters internal node-link state annotations out of evidence', () => {

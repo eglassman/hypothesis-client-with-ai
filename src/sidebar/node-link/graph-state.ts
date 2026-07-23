@@ -38,12 +38,21 @@ export type ManualTagEdge = {
   createdFrom?: string;
 };
 
+export type TagSummary = {
+  tag: string;
+  summary: string;
+  generatedAt: string;
+  sourceFingerprint: string;
+  model?: string;
+};
+
 export type NodeLinkSemanticState = {
   schemaVersion: 1;
   updatedAt: string | null;
   selectedGroupId: string | null;
   descriptiveTags: DescriptiveTag[];
   tagEdges: ManualTagEdge[];
+  tagSummaries: TagSummary[];
 };
 
 export type NodeLinkStatePayloadV1 = {
@@ -55,6 +64,7 @@ export type NodeLinkStatePayloadV1 = {
   edits: {
     descriptiveTags?: DescriptiveTag[];
     tagEdges?: ManualTagEdge[];
+    tagSummaries?: TagSummary[];
   };
 };
 
@@ -163,6 +173,35 @@ function cleanTagEdges(edges: unknown[] = []) {
   return result;
 }
 
+function cleanTagSummaries(summaries: unknown[] = []) {
+  const seen = new Set<string>();
+  const result: TagSummary[] = [];
+
+  for (const item of summaries) {
+    const summary = item as TagSummary | null;
+    const tag = cleanString(summary?.tag);
+    const text = cleanString(summary?.summary);
+    const generatedAt = cleanString(summary?.generatedAt);
+    if (!tag || !text || !generatedAt || seen.has(tag)) {
+      continue;
+    }
+    seen.add(tag);
+    const cleanSummary: TagSummary = {
+      tag,
+      summary: text,
+      generatedAt,
+      sourceFingerprint: cleanString(summary?.sourceFingerprint),
+    };
+    const model = cleanString(summary?.model);
+    if (model) {
+      cleanSummary.model = model;
+    }
+    result.push(cleanSummary);
+  }
+
+  return result;
+}
+
 export function nodeLinkStateUri(groupId: string) {
   return new URL(encodeURIComponent(groupId), STATE_URI_PREFIX).toString();
 }
@@ -176,6 +215,7 @@ export function emptyNodeLinkState(
     selectedGroupId: null,
     descriptiveTags: [],
     tagEdges: [],
+    tagSummaries: [],
     ...overrides,
   });
 }
@@ -196,6 +236,7 @@ export function normalizeNodeLinkState(
       cleanStringOrNull(raw.selectedGroupId),
     descriptiveTags: cleanDescriptiveTags(raw.descriptiveTags),
     tagEdges: cleanTagEdges(raw.tagEdges),
+    tagSummaries: cleanTagSummaries(raw.tagSummaries),
   };
 }
 
@@ -231,6 +272,7 @@ export function stateFromNodeLinkPayload(
     {
       descriptiveTags: payload.edits?.descriptiveTags || [],
       tagEdges: payload.edits?.tagEdges || [],
+      tagSummaries: payload.edits?.tagSummaries || [],
     },
     {
       groupId: options.groupId || payload.groupId,
@@ -260,6 +302,7 @@ export function createNodeLinkStatePayload(
     edits: {
       descriptiveTags: normalized.descriptiveTags,
       tagEdges: normalized.tagEdges,
+      tagSummaries: normalized.tagSummaries,
     },
   };
 }

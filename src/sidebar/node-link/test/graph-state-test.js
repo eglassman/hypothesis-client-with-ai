@@ -28,6 +28,7 @@ describe('node-link graph state helpers', () => {
       edits: {
         descriptiveTags: [],
         tagEdges: [],
+        tagSummaries: [],
       },
       ...overrides,
     };
@@ -78,6 +79,22 @@ describe('node-link graph state helpers', () => {
               connectionType: 'ignored',
             },
           ],
+          tagSummaries: [
+            {
+              tag: 'Character',
+              summary: 'Line one.\nLine two.',
+              generatedAt: '2026-07-01T11:00:00.000Z',
+              sourceFingerprint: 'v1:abc12345',
+              model: 'claude-test',
+            },
+            {
+              tag: 'Character',
+              summary: 'Duplicate ignored.',
+              generatedAt: '2026-07-01T12:00:00.000Z',
+              sourceFingerprint: 'v1:duplicate',
+            },
+            { tag: 'Theme', summary: '', generatedAt: '' },
+          ],
           layout: { Character: { x: 1, y: 2 } },
           annotations: [{ id: 'already-in-hypothesis' }],
         },
@@ -99,6 +116,15 @@ describe('node-link graph state helpers', () => {
         createdFrom: 'manual',
       },
     ]);
+    assert.deepEqual(state.tagSummaries, [
+      {
+        tag: 'Character',
+        summary: 'Line one.\nLine two.',
+        generatedAt: '2026-07-01T11:00:00.000Z',
+        sourceFingerprint: 'v1:abc12345',
+        model: 'claude-test',
+      },
+    ]);
     assert.notProperty(state, 'layout');
     assert.notProperty(state, 'annotations');
   });
@@ -112,6 +138,14 @@ describe('node-link graph state helpers', () => {
           sourceTag: 'Character',
           targetTag: 'Theme',
           connectionType: 'explains',
+        },
+      ],
+      tagSummaries: [
+        {
+          tag: 'Character',
+          summary: 'Line one.\nLine two.',
+          generatedAt: '2026-07-01T11:00:00.000Z',
+          sourceFingerprint: 'v1:abc12345',
         },
       ],
     });
@@ -140,6 +174,14 @@ describe('node-link graph state helpers', () => {
         label: 'explains',
         createdBy: 'human',
         createdFrom: 'manual',
+      },
+    ]);
+    assert.deepEqual(payload.edits.tagSummaries, [
+      {
+        tag: 'Character',
+        summary: 'Line one.\nLine two.',
+        generatedAt: '2026-07-01T11:00:00.000Z',
+        sourceFingerprint: 'v1:abc12345',
       },
     ]);
     assert.notProperty(payload.edits, 'layout');

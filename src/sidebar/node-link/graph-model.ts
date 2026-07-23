@@ -85,18 +85,22 @@ export function annotationDocumentLabel(annotation: Annotation) {
   return compactText(documentLabelFromUrl(annotation.uri), 54);
 }
 
-export function annotationQuote(annotation: Annotation) {
+export function annotationFullQuote(annotation: Annotation) {
   for (const target of annotation.target || []) {
     for (const selector of target.selector || []) {
       if (selector.type === 'TextQuoteSelector') {
-        return compactText(selector.exact, 220);
+        return selector.exact;
       }
     }
     if (target.description) {
-      return compactText(target.description, 220);
+      return target.description;
     }
   }
   return '';
+}
+
+export function annotationQuote(annotation: Annotation) {
+  return compactText(annotationFullQuote(annotation), 220);
 }
 
 function sourceUrl(annotation: Annotation) {
