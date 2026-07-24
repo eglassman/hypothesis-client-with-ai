@@ -29,6 +29,27 @@ export const NEG_EXAMPLE_SCHEMA_TAG_SUFFIX = '-neg-example';
 const AI_USER_APPROVED = 'ai-user-approved';
 const AI_PENDING = 'ai-pending';
 
+const AI_PRIMARY_TAG_PREFIX = 'ai-primary-tag:';
+
+/** Build the primary-tag marker for a schema tag name. */
+export function aiPrimaryTagMarker(schemaTag: string): string {
+  return `${AI_PRIMARY_TAG_PREFIX}${schemaTag.trim()}`;
+}
+
+/** True for the internal Step-2 primary-tag marker; never shown in the UI. */
+export function isAiPrimaryTagMarker(tag: string): boolean {
+  return tag.startsWith(AI_PRIMARY_TAG_PREFIX);
+}
+
+function primarySchemaTagFromTags(tags: string[]): string | null {
+  const marker = tags.find(t => t.startsWith(AI_PRIMARY_TAG_PREFIX));
+  if (!marker) {
+    return null;
+  }
+  const name = marker.slice(AI_PRIMARY_TAG_PREFIX.length).trim();
+  return name || null;
+}
+
 const DESCRIPTOR_SEP = '\0';
 
 /** One inventory row per `(schemaTag, query)` within a group — not per document. */
@@ -50,7 +71,8 @@ export function isAiSearchSystemTag(tag: string): boolean {
     tag === AI_USER_APPROVED ||
     tag === AI_PENDING ||
     tag === NODE_LINK_STATE_TAG ||
-    tag === NODE_LINK_STATE_VERSION_TAG
+    tag === NODE_LINK_STATE_VERSION_TAG ||
+    tag.startsWith(AI_PRIMARY_TAG_PREFIX)
   );
 }
 
@@ -216,15 +238,25 @@ export function tagInventoryRowDescriptorsForAnnotation(
   }
 
   if (tags.includes(AI_USER_APPROVED)) {
+    const primaryTag = primarySchemaTagFromTags(tags);
     for (const schemaTag of positiveSchemaTags(tags)) {
-      out.push({ schemaTag, query: textQuery });
+      const query =
+        primaryTag === null || norm(schemaTag) === norm(primaryTag)
+          ? textQuery
+          : '';
+      out.push({ schemaTag, query });
     }
     return out;
   }
 
   if (tags.includes(AI_PENDING)) {
+    const primaryTag = primarySchemaTagFromTags(tags);
     for (const schemaTag of positiveSchemaTags(tags)) {
-      out.push({ schemaTag, query: textQuery });
+      const query =
+        primaryTag === null || norm(schemaTag) === norm(primaryTag)
+          ? textQuery
+          : '';
+      out.push({ schemaTag, query });
     }
     return out;
   }

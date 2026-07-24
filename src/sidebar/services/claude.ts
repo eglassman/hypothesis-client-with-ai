@@ -293,4 +293,61 @@ Return one decision per input case with matching before/after strings.`,
 
     return parsed.decisions;
   }
+
+  /**
+   * Step 2: given the same few-shot prompt prefix used for the primary search
+   * (with the final line replaced to ask about a specific quote), return the
+   * list of other tags that apply. No document is needed — the quote is inline.
+   */
+  async classifyQuoteForOtherTags(request: {
+    userMessage: string;
+    apiKey: string;
+    signal?: AbortSignal;
+  }): Promise<string[]> {
+    const { userMessage, apiKey, signal } = request;
+
+    const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+    const OtherTagsSchema = z.object({
+      tags: z
+        .array(z.string())
+        .describe(
+          'Tag names from the examples that clearly and confidently apply to this quote, excluding the primary tag already assigned. Return an empty array if no other tags apply — do not guess.',
+        ),
+    });
+
+    const startedAt = Date.now();
+    try {
+      const message = await client.messages.parse(
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 500,
+          system:
+            'Based on the annotation examples provided, identify which tags apply to the given quote. Only assign a tag if the quote clearly and confidently belongs to that category — err on the side of returning fewer tags. If no additional tags apply, return an empty array. Do not invent or guess tags.',
+          messages: [{ role: 'user', content: userMessage }],
+          output_config: { format: zodOutputFormat(OtherTagsSchema) },
+        },
+        signal ? { signal } : undefined,
+      );
+
+      return message.parsed_output?.tags ?? [];
+    } catch (error: unknown) {
+      const aborted =
+        signal?.aborted ||
+        (error instanceof Error && error.name === 'AbortError');
+      if (aborted) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw error;
+        }
+        const abortErr = new Error('Aborted');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+      }
+      console.error('[ClaudeService] classifyQuoteForOtherTags error:', {
+        elapsedMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
+  }
 }
