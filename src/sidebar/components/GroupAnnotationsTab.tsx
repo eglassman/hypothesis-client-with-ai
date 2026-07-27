@@ -653,25 +653,27 @@ function GroupSection({ tag, annotations, groupId, isFullWidth }: GroupSectionPr
               </table>
             </div>
           ) : (
-            <ul className="flex flex-col gap-y-1 px-2">
+            <table style={{ tableLayout: 'auto', borderCollapse: 'separate', borderSpacing: 0, backgroundColor: 'white', width: '100%' }}>
+              <tbody>
               {visibleAnnotations.map(ann => {
                 const excerptText = annotationQuote(ann);
                 const rawSpans = rawSpanMap.get(ann.id);
                 const labeledSpans = rawSpans ? toLabeled(rawSpans) : [];
                 return (
-                  <li key={ann.id} className="border border-grey-3 rounded p-2 text-sm bg-white">
-                    <p className="text-xs text-color-text-light truncate mb-1">{ann.document?.title || ann.uri}</p>
-                    {excerptText && (
-                      <blockquote className="border-l-2 border-grey-4 pl-2 italic text-color-text-light text-xs mb-1">
-                        {labeledSpans.length > 0 ? (
-                          <HighlightedSentence original={excerptText} spans={labeledSpans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
-                        ) : excerptText}
-                      </blockquote>
-                    )}
-                  </li>
+                  <tr key={ann.id}>
+                    <td style={{ padding: '4px 6px', whiteSpace: 'nowrap', fontSize: '10px', color: '#9ca3af', minWidth: '60px', maxWidth: '100px', verticalAlign: 'top' }}>
+                      <span title={sourceTooltip(ann)}>{sourceLabel(ann)}</span>
+                    </td>
+                    <td className="italic text-color-text-light text-xs" style={{ padding: '4px', whiteSpace: 'nowrap' }}>
+                      {excerptText && (labeledSpans.length > 0 ? (
+                        <HighlightedSentence original={excerptText} spans={labeledSpans} labelColors={labelIndex.labelColors} labelNames={labelIndex.labelNames} activeLabels={activeLabels} mode={renderMode} />
+                      ) : excerptText)}
+                    </td>
+                  </tr>
                 );
               })}
-            </ul>
+              </tbody>
+            </table>
           )}
         </div>
       )}
