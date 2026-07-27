@@ -62,6 +62,10 @@ import {
   type ClaudeSearchResult,
   type ClaudeService,
 } from '../../services/claude';
+import {
+  abortAllClaudeRuns,
+  registerClaudeRun,
+} from '../../services/claude-runs';
 import type { ExperimentLogService } from '../../services/experiment-log';
 import type { FrameSyncService } from '../../services/frame-sync';
 import type { NodeLinkStateService } from '../../services/node-link-state';
@@ -83,7 +87,6 @@ import {
 import { SearchableCombobox } from '../SearchableCombobox';
 import SidebarPanel from '../SidebarPanel';
 import SearchField from './SearchField';
-import { abortAllClaudeRuns, registerClaudeRun } from './ai-search-claude-runs';
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
@@ -466,6 +469,7 @@ function AISearchPanel({
         tagReference,
       });
 
+      // eslint-disable-next-line no-console -- useful request diagnostics without API-key contents
       console.log('[AISearch] Claude request', {
         schemaTag: tagTrim,
         searchQuery: query,

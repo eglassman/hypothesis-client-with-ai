@@ -1,9 +1,14 @@
+import { Button, Spinner } from '@hypothesis/frontend-shared';
 import { useMemo, useState } from 'preact/hooks';
 
 import { spotlightNodeLinkGraph } from '../../node-link/graph-model';
 import type { NodeLinkGraph, NodeLinkQuote } from '../../node-link/graph-model';
 import type { ManualTagEdge } from '../../node-link/graph-state';
 import { RelationshipSentence, TagBadge } from './RelationshipSentence';
+import type {
+  TagSummaryProgress,
+  TagSummaryStatus,
+} from './use-tag-summary-generation';
 
 const QUOTE_PREVIEW_LIMIT = 6;
 
@@ -131,13 +136,45 @@ export type TagOverviewViewportProps = {
   graph: NodeLinkGraph;
   spotlightTag: string;
   tagColors: Record<string, string>;
+  apiKey: string;
+  summaryStatusByTag: Map<string, TagSummaryStatus>;
+  errorsByTag: Record<string, string>;
+  generatingTag: string;
+  bulkProgress: TagSummaryProgress | null;
+  bulkTargetCount: number;
+  onApiKeyChange: (value: string) => void;
+  onGenerateTag: (tag: string) => void;
+  onGenerateAll: () => void;
+  onStopGeneration: () => void;
 };
+
+function generatedAtLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
 
 export function TagOverviewViewport({
   graph,
   spotlightTag,
   tagColors,
+  apiKey,
+  summaryStatusByTag,
+  errorsByTag,
+  generatingTag,
+  bulkProgress,
+  bulkTargetCount,
+  onApiKeyChange,
+  onGenerateTag,
+  onGenerateAll,
+  onStopGeneration,
 }: TagOverviewViewportProps) {
+  const [editingApiKey, setEditingApiKey] = useState(!apiKey.trim());
   const visibleGraph = useMemo(
     () => spotlightNodeLinkGraph(graph, spotlightTag),
     [graph, spotlightTag],
@@ -178,17 +215,89 @@ export function TagOverviewViewport({
       className="flex min-h-0 flex-col overflow-hidden rounded border bg-white"
       data-testid="tag-overview"
     >
-      <header className="flex items-center justify-between gap-4 border-b bg-grey-1 px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b bg-grey-1 px-4 py-3">
         <div>
           <h2 className="text-sm font-bold">Tag overview</h2>
           <p className="mt-0.5 text-xs text-grey-6">
             Relationships, quote evidence, and descriptions for every tag.
           </p>
         </div>
-        <span className="shrink-0 text-xs font-bold text-grey-6">
-          {tags.length} {tags.length === 1 ? 'tag' : 'tags'}
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="shrink-0 text-xs font-bold text-grey-6">
+            {tags.length} {tags.length === 1 ? 'tag' : 'tags'}
+          </span>
+          {editingApiKey || !apiKey.trim() ? (
+            <div className="flex items-center gap-1">
+              <input
+                aria-label="Claude API key"
+                className="h-8 w-44 rounded border bg-white px-2 text-xs focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                data-testid="tag-summary-api-key"
+                name="tag-summary-api-key"
+                placeholder="CLAUDE_API_KEY"
+                type="password"
+                value={apiKey}
+                onInput={event =>
+                  onApiKeyChange((event.target as HTMLInputElement).value)
+                }
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!apiKey.trim()}
+                onClick={() => setEditingApiKey(false)}
+              >
+                Use key
+              </Button>
+            </div>
+          ) : (
+            <button
+              className="rounded px-2 py-1 text-xs font-bold text-grey-6 hover:bg-grey-2 hover:text-color-text focus:outline-none focus:ring-2 focus:ring-brand"
+              type="button"
+              onClick={() => setEditingApiKey(true)}
+            >
+              Change Claude key
+            </button>
+          )}
+          <Button
+            size="sm"
+            disabled={!apiKey.trim() || Boolean(generatingTag)}
+            title={`${bulkTargetCount} missing or stale summaries`}
+            onClick={onGenerateAll}
+          >
+            Generate AI summaries for all tags
+          </Button>
+        </div>
       </header>
+
+      {bulkProgress && (
+        <div
+          className="flex flex-wrap items-center gap-3 border-b bg-brand/5 px-4 py-2"
+          data-testid="tag-summary-bulk-progress"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3 text-xs font-bold text-grey-7">
+              <span className="truncate">
+                Generating{' '}
+                {Math.min(bulkProgress.completed + 1, bulkProgress.total)} of{' '}
+                {bulkProgress.total}: {bulkProgress.currentTag}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {bulkProgress.completed}/{bulkProgress.total} complete
+              </span>
+            </div>
+            <progress
+              className="mt-1 h-1.5 w-full accent-brand"
+              max={bulkProgress.total}
+              value={bulkProgress.completed}
+            />
+          </div>
+          <Button size="sm" variant="secondary" onClick={onStopGeneration}>
+            Stop
+          </Button>
+        </div>
+      )}
 
       {tags.length ? (
         <div className="min-h-0 flex-1 overflow-auto">
@@ -222,6 +331,9 @@ export function TagOverviewViewport({
               {tags.map(tag => {
                 const relationships = relationshipsByTag.get(tag.tag) || [];
                 const quotes = quotesByTag.get(tag.tag) || [];
+                const summaryStatus = summaryStatusByTag.get(tag.tag);
+                const summary = summaryStatus?.summary || null;
+                const isGenerating = generatingTag === tag.tag;
                 return (
                   <tr
                     className="align-top even:bg-grey-1/40"
@@ -265,12 +377,51 @@ export function TagOverviewViewport({
                       <TagQuotesByDocument quotes={quotes} />
                     </td>
                     <td className="border-l p-4">
-                      <p
-                        className="rounded border border-dashed bg-grey-1 p-3 text-sm leading-6 text-grey-7"
+                      <div
+                        className="space-y-2"
                         data-testid="tag-overview-summary"
                       >
-                        AI generated summary here
-                      </p>
+                        {summary ? (
+                          <div className="rounded border bg-grey-1 p-3">
+                            <p className="whitespace-pre-line text-sm leading-6 text-grey-7">
+                              {summary.summary}
+                            </p>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-grey-6">
+                              <time dateTime={summary.generatedAt}>
+                                Generated at{' '}
+                                {generatedAtLabel(summary.generatedAt)}
+                              </time>
+                              {summaryStatus?.stale && (
+                                <span className="rounded-full bg-yellow-2 px-2 py-0.5 font-bold text-yellow-7">
+                                  Stale
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="rounded border border-dashed bg-grey-1 p-3 text-sm leading-6 text-grey-7">
+                            No AI summary yet.
+                          </p>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={!apiKey.trim() || Boolean(generatingTag)}
+                          onClick={() => onGenerateTag(tag.tag)}
+                        >
+                          {isGenerating && <Spinner size="sm" />}
+                          {isGenerating
+                            ? 'Generating...'
+                            : summary
+                              ? 'Regenerate'
+                              : 'Generate now'}
+                        </Button>
+                        {errorsByTag[tag.tag] && (
+                          <p className="text-xs text-red-6" role="alert">
+                            {errorsByTag[tag.tag]}
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

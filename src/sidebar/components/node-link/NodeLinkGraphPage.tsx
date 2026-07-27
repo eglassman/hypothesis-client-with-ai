@@ -25,6 +25,7 @@ import type {
 } from '../../node-link/graph-state';
 import { withServices } from '../../service-context';
 import type { AuthService } from '../../services/auth';
+import type { ClaudeService } from '../../services/claude';
 import type { NodeLinkStateService } from '../../services/node-link-state';
 import type { SessionService } from '../../services/session';
 import type { ToastMessengerService } from '../../services/toast-messenger';
@@ -33,6 +34,7 @@ import { SearchableCombobox } from '../SearchableCombobox';
 import { RelationshipSentence, TagBadge } from './RelationshipSentence';
 import { TagCombobox } from './TagCombobox';
 import { TagOverviewViewport } from './TagOverviewViewport';
+import { useTagSummaryGeneration } from './use-tag-summary-generation';
 
 type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -47,6 +49,7 @@ type PendingDelete =
 
 export type NodeLinkGraphPageProps = {
   auth: AuthService;
+  claude: ClaudeService;
   nodeLinkState: NodeLinkStateService;
   session: SessionService;
   toastMessenger: ToastMessengerService;
@@ -1419,6 +1422,7 @@ export function NodeLinkEditor({
     const now = new Date().toISOString();
     let nextTags: DescriptiveTag[];
     let nextEdges = semanticState.tagEdges;
+    let nextSummaries = semanticState.tagSummaries;
     if (tagId) {
       const previous = semanticState.descriptiveTags.find(
         item => item.id === tagId,
@@ -1436,6 +1440,9 @@ export function NodeLinkEditor({
               ? now
               : edge.updatedAt,
         }));
+        nextSummaries = semanticState.tagSummaries.map(summary =>
+          summary.tag === previous.tag ? { ...summary, tag } : summary,
+        );
       }
     } else {
       nextTags = [
@@ -1454,6 +1461,7 @@ export function NodeLinkEditor({
       ...semanticState,
       descriptiveTags: nextTags,
       tagEdges: nextEdges,
+      tagSummaries: nextSummaries,
       updatedAt: now,
     });
     if (tagId) {
@@ -1489,6 +1497,9 @@ export function NodeLinkEditor({
       ...semanticState,
       descriptiveTags: semanticState.descriptiveTags.filter(
         item => item.id !== tag.id,
+      ),
+      tagSummaries: semanticState.tagSummaries.filter(
+        summary => summary.tag !== tag.tag,
       ),
       updatedAt: new Date().toISOString(),
     });
@@ -1926,6 +1937,7 @@ export function NodeLinkEditor({
 
 export function NodeLinkGraphPage({
   auth,
+  claude,
   nodeLinkState,
   session,
   toastMessenger,
@@ -2071,29 +2083,38 @@ export function NodeLinkGraphPage({
   const selectedGroup = findGroupByIdentifier(selectedGroupId, groups);
   const selectedGroupPubId = selectedGroup?.id || selectedGroupId;
 
-  const saveSemanticState = (nextState: NodeLinkSemanticState) => {
+  const persistSemanticState = async (nextState: NodeLinkSemanticState) => {
     if (!selectedGroupPubId) {
+      const error = new Error('Choose a group before saving.');
       setSaveStatus('error');
-      setSaveMessage('Choose a group before saving.');
-      return;
+      setSaveMessage(error.message);
+      throw error;
     }
 
     setSemanticState(nextState);
     setSaveStatus('saving');
     setSaveMessage('');
-    nodeLinkState
-      .saveState(selectedGroupPubId, nextState, {
-        groupName: selectedGroup?.name,
-      })
-      .then(result => {
-        setSemanticState(result.state);
-        setSaveStatus('saved');
-        setSaveMessage('Saved to Hypothesis.');
-      })
-      .catch(err => {
-        setSaveStatus('error');
-        setSaveMessage(err instanceof Error ? err.message : String(err));
-      });
+    try {
+      const result = await nodeLinkState.saveState(
+        selectedGroupPubId,
+        nextState,
+        {
+          groupName: selectedGroup?.name,
+        },
+      );
+      setSemanticState(result.state);
+      setSaveStatus('saved');
+      setSaveMessage('Saved to Hypothesis.');
+      return result.state;
+    } catch (error: unknown) {
+      setSaveStatus('error');
+      setSaveMessage(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  };
+
+  const saveSemanticState = (nextState: NodeLinkSemanticState) => {
+    void persistSemanticState(nextState).catch(() => {});
   };
 
   const graph = useMemo(() => {
@@ -2118,6 +2139,18 @@ export function NodeLinkGraphPage({
       ),
     [groupGraph.tags, schemaTagColors],
   );
+  const tagSummaryGeneration = useTagSummaryGeneration({
+    claude,
+    graph: groupGraph,
+    semanticState,
+    saveState: persistSemanticState,
+    toastMessenger,
+  });
+  useEffect(() => {
+    if (tagSummaryGeneration.isRunning) {
+      setIsSidebarVisible(false);
+    }
+  }, [tagSummaryGeneration.isRunning]);
   const spotlightGraph = useMemo(
     () => spotlightNodeLinkGraph(graph, spotlightTag),
     [graph, spotlightTag],
@@ -2283,7 +2316,9 @@ export function NodeLinkGraphPage({
             onClick={() => {
               loadGraph(true);
             }}
-            disabled={!canLoad || status === 'loading'}
+            disabled={
+              !canLoad || status === 'loading' || tagSummaryGeneration.isRunning
+            }
             title="Refresh from Hypothesis"
           >
             <RefreshIcon className="mr-1 inline" /> Refresh
@@ -2300,7 +2335,11 @@ export function NodeLinkGraphPage({
                 <select
                   className="h-9 min-w-0 rounded border bg-white px-2"
                   value={selectedGroupId}
-                  disabled={!isLoggedIn || !groups.length}
+                  disabled={
+                    !isLoggedIn ||
+                    !groups.length ||
+                    tagSummaryGeneration.isRunning
+                  }
                   onChange={event => {
                     setSelectedGroupId(
                       (event.target as HTMLSelectElement).value,
@@ -2374,6 +2413,7 @@ export function NodeLinkGraphPage({
                       : 'text-grey-6 hover:text-color-text',
                   )}
                   type="button"
+                  disabled={tagSummaryGeneration.isRunning}
                   aria-pressed={viewportView === 'graph'}
                   onClick={() => showViewportView('graph')}
                 >
@@ -2387,6 +2427,7 @@ export function NodeLinkGraphPage({
                       : 'text-grey-6 hover:text-color-text',
                   )}
                   type="button"
+                  disabled={tagSummaryGeneration.isRunning}
                   aria-pressed={viewportView === 'edges'}
                   onClick={() => showViewportView('edges')}
                 >
@@ -2400,6 +2441,7 @@ export function NodeLinkGraphPage({
                       : 'text-grey-6 hover:text-color-text',
                   )}
                   type="button"
+                  disabled={tagSummaryGeneration.isRunning}
                   aria-pressed={viewportView === 'overview'}
                   onClick={() => showViewportView('overview')}
                 >
@@ -2422,6 +2464,7 @@ export function NodeLinkGraphPage({
                   aria-controls="node-link-sidebar"
                   aria-expanded={isSidebarVisible}
                   data-testid="node-link-sidebar-toggle"
+                  disabled={tagSummaryGeneration.isRunning}
                   onClick={toggleSidebar}
                 >
                   {isSidebarVisible ? 'Hide sidebar' : 'Show sidebar'}
@@ -2469,6 +2512,16 @@ export function NodeLinkGraphPage({
               graph={graph}
               spotlightTag={spotlightTag}
               tagColors={tagColors}
+              apiKey={tagSummaryGeneration.apiKey}
+              summaryStatusByTag={tagSummaryGeneration.statusByTag}
+              errorsByTag={tagSummaryGeneration.errorsByTag}
+              generatingTag={tagSummaryGeneration.generatingTag}
+              bulkProgress={tagSummaryGeneration.bulkProgress}
+              bulkTargetCount={tagSummaryGeneration.bulkTargetCount}
+              onApiKeyChange={tagSummaryGeneration.setApiKey}
+              onGenerateTag={tagSummaryGeneration.generateTag}
+              onGenerateAll={tagSummaryGeneration.generateAll}
+              onStopGeneration={tagSummaryGeneration.stopGeneration}
             />
           ) : viewportView === 'edges' ? (
             <ManualEdgeViewport
@@ -2636,6 +2689,7 @@ export function NodeLinkGraphPage({
 
 export default withServices(NodeLinkGraphPage, [
   'auth',
+  'claude',
   'nodeLinkState',
   'session',
   'toastMessenger',

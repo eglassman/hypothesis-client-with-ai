@@ -1,6 +1,6 @@
 /**
- * In-memory registry for in-flight Claude `AISearchDocument` calls only.
- * Used for AbortSignal and Stop — UI (timer) lives in AISearchPanel.
+ * In-memory lock and cancellation registry for Claude requests.
+ * Claude features share this so expensive operations cannot overlap silently.
  */
 
 type RunEntry = {
@@ -9,14 +9,11 @@ type RunEntry = {
 
 const runs = new Map<string, RunEntry>();
 
-/**
- * Register a Claude run immediately before AISearchDocument; call `finish` in `finally` after await.
- *
- * Returns `null` when another Claude request is already in flight.
- */
+/** Register one Claude operation. Call `finish` in a `finally` block. */
 export function registerClaudeRun(): {
   runId: string;
   signal: AbortSignal;
+  abort: () => void;
   finish: () => void;
 } | null {
   if (runs.size > 0) {
@@ -30,8 +27,11 @@ export function registerClaudeRun(): {
   const finish = () => {
     runs.delete(runId);
   };
+  const abort = () => {
+    controller.abort();
+  };
 
-  return { runId, signal: controller.signal, finish };
+  return { runId, signal: controller.signal, abort, finish };
 }
 
 /** Abort every in-flight Claude request and clear the registry. */
@@ -42,7 +42,7 @@ export function abortAllClaudeRuns() {
   runs.clear();
 }
 
-/** For tests / debugging. */
+/** For tests and diagnostics. */
 export function getActiveClaudeRunCount(): number {
   return runs.size;
 }

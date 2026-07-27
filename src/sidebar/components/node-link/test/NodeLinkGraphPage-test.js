@@ -250,6 +250,7 @@ describe('routeGroupToApply', () => {
 
 describe('NodeLinkGraphPage', () => {
   let fakeStore;
+  let fakeClaude;
   let fakeNodeLinkState;
 
   function evidenceAnnotation({ id, uri, exact, tags = ['Shared Tag'] }) {
@@ -271,6 +272,7 @@ describe('NodeLinkGraphPage', () => {
     return mount(
       <NodeLinkGraphPage
         auth={{ login: sinon.stub().resolves() }}
+        claude={fakeClaude}
         nodeLinkState={fakeNodeLinkState}
         session={{ reload: sinon.stub().resolves() }}
         toastMessenger={{ error: sinon.stub() }}
@@ -279,6 +281,14 @@ describe('NodeLinkGraphPage', () => {
   }
 
   beforeEach(() => {
+    fakeClaude = {
+      apiKey: sinon.stub().returns('test-key'),
+      setApiKey: sinon.stub(),
+      summarizeTag: sinon.stub().resolves({
+        summary: 'First summary line.\nSecond summary line.',
+        model: 'claude-test',
+      }),
+    };
     fakeStore = {
       allGroups: sinon.stub().returns([
         {
@@ -307,6 +317,12 @@ describe('NodeLinkGraphPage', () => {
           state: emptyNodeLinkState({ selectedGroupId: groupId }),
           annotationId: null,
           stateUri: `https://hypothesis-node-link.local/state/group/${groupId}`,
+        }),
+      ),
+      saveState: sinon.stub().callsFake((_groupId, state) =>
+        Promise.resolve({
+          status: 'saved',
+          state,
         }),
       ),
     };
@@ -648,5 +664,55 @@ describe('NodeLinkGraphPage', () => {
     wrapper.update();
 
     assert.isFalse(sidebar().prop('hidden'));
+  });
+
+  it('generates and persists a summary for one tag', async () => {
+    fakeNodeLinkState.fetchGroupAnnotations.resolves([
+      evidenceAnnotation({
+        id: 'ann-character',
+        uri: 'https://example.com/doc',
+        exact: 'Character quote evidence',
+        tags: ['Character'],
+      }),
+    ]);
+    const wrapper = createComponent();
+
+    await waitFor(() => {
+      wrapper.update();
+      return wrapper.find('g[role="button"]').length === 1;
+    });
+    wrapper
+      .find('button')
+      .filterWhere(button => button.text() === 'Tag overview')
+      .props()
+      .onClick();
+    wrapper.update();
+
+    wrapper
+      .find('tr[data-tag="Character"] button')
+      .filterWhere(button => button.text() === 'Generate now')
+      .props()
+      .onClick();
+
+    await waitFor(() => fakeNodeLinkState.saveState.calledOnce);
+    wrapper.update();
+
+    assert.calledOnce(fakeClaude.summarizeTag);
+    assert.include(
+      fakeClaude.summarizeTag.firstCall.args[0].prompt,
+      'Character quote evidence',
+    );
+    const savedState = fakeNodeLinkState.saveState.firstCall.args[1];
+    assert.deepInclude(savedState.tagSummaries[0], {
+      tag: 'Character',
+      summary: 'First summary line.\nSecond summary line.',
+      model: 'claude-test',
+    });
+    assert.include(
+      wrapper
+        .find('tr[data-tag="Character"] [data-testid="tag-overview-summary"]')
+        .text(),
+      'First summary line.\nSecond summary line.',
+    );
   });
 });

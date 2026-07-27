@@ -1,4 +1,5 @@
 import { mount } from '@hypothesis/frontend-testing';
+import sinon from 'sinon';
 
 import { TagOverviewViewport } from '../TagOverviewViewport';
 
@@ -28,6 +29,14 @@ function quote({ id, tag, documentLabel, documentUri }) {
 function createComponent({
   graph: graphOverrides = {},
   spotlightTag = '',
+  apiKey = 'test-key',
+  summaryStatusByTag = new Map(),
+  generatingTag = '',
+  bulkProgress = null,
+  onGenerateTag = sinon.stub(),
+  onGenerateAll = sinon.stub(),
+  onStopGeneration = sinon.stub(),
+  onApiKeyChange = sinon.stub(),
 } = {}) {
   const graph = {
     tags: ['Theme', 'Character', 'Action'].map(tagNode),
@@ -74,6 +83,16 @@ function createComponent({
       graph={graph}
       spotlightTag={spotlightTag}
       tagColors={{}}
+      apiKey={apiKey}
+      summaryStatusByTag={summaryStatusByTag}
+      errorsByTag={{}}
+      generatingTag={generatingTag}
+      bulkProgress={bulkProgress}
+      bulkTargetCount={graph.tags.length}
+      onApiKeyChange={onApiKeyChange}
+      onGenerateTag={onGenerateTag}
+      onGenerateAll={onGenerateAll}
+      onStopGeneration={onStopGeneration}
     />,
   );
 }
@@ -96,8 +115,85 @@ describe('TagOverviewViewport', () => {
     assert.include(relationships.at(2).text(), 'Theme');
     assert.equal(
       wrapper.find('[data-testid="tag-overview-summary"]').first().text(),
-      'AI generated summary here',
+      'No AI summary yet.Generate now',
     );
+  });
+
+  it('generates one tag from the summary cell', () => {
+    const onGenerateTag = sinon.stub();
+    const wrapper = createComponent({ onGenerateTag });
+    const characterRow = wrapper.find('tr[data-tag="Character"]');
+
+    characterRow
+      .find('button')
+      .filterWhere(button => button.text() === 'Generate now')
+      .props()
+      .onClick();
+
+    assert.calledWith(onGenerateTag, 'Character');
+  });
+
+  it('requests a shared Claude key when none is configured', () => {
+    const onApiKeyChange = sinon.stub();
+    const wrapper = createComponent({ apiKey: '', onApiKeyChange });
+    const input = wrapper.find('[data-testid="tag-summary-api-key"]');
+
+    assert.isTrue(input.exists());
+    assert.isTrue(
+      wrapper
+        .find('button')
+        .filterWhere(button => button.text() === 'Generate now')
+        .first()
+        .prop('disabled'),
+    );
+
+    input.props().onInput({ target: { value: 'sk-test' } });
+    assert.calledWith(onApiKeyChange, 'sk-test');
+  });
+
+  it('shows a retained summary, generated date and stale status compactly', () => {
+    const summaryStatusByTag = new Map([
+      [
+        'Character',
+        {
+          summary: {
+            tag: 'Character',
+            summary: 'Line one.\nLine two.',
+            generatedAt: '2026-07-22T12:00:00.000Z',
+            sourceFingerprint: 'v1:old',
+          },
+          stale: true,
+        },
+      ],
+    ]);
+    const wrapper = createComponent({ summaryStatusByTag });
+    const characterSummary = wrapper.find(
+      'tr[data-tag="Character"] [data-testid="tag-overview-summary"]',
+    );
+
+    assert.include(characterSummary.text(), 'Line one.\nLine two.');
+    assert.include(characterSummary.text(), 'Generated at');
+    assert.include(characterSummary.text(), 'Stale');
+    assert.include(characterSummary.text(), 'Regenerate');
+  });
+
+  it('shows sequential bulk progress and a stop control', () => {
+    const onStopGeneration = sinon.stub();
+    const wrapper = createComponent({
+      generatingTag: 'Character',
+      bulkProgress: { completed: 1, total: 3, currentTag: 'Character' },
+      onStopGeneration,
+    });
+    const progress = wrapper.find('[data-testid="tag-summary-bulk-progress"]');
+
+    assert.include(progress.text(), 'Generating 2 of 3: Character');
+    assert.equal(progress.find('progress').prop('value'), 1);
+    progress
+      .find('button')
+      .filterWhere(button => button.text() === 'Stop')
+      .props()
+      .onClick();
+    assert.calledOnce(onStopGeneration);
   });
 
   it('groups quotes by document in alphabetical collapsible sections', () => {

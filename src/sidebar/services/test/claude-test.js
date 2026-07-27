@@ -1,4 +1,8 @@
-import { ClaudeService, isClaudeDocumentDownloadError } from '../claude';
+import {
+  ClaudeService,
+  isClaudeContextLimitError,
+  isClaudeDocumentDownloadError,
+} from '../claude';
 
 describe('ClaudeService', () => {
   it('stores the user API key in memory only', () => {
@@ -12,6 +16,7 @@ describe('ClaudeService', () => {
     const claude = new ClaudeService();
 
     await assert.rejects(
+      // eslint-disable-next-line new-cap -- AISearchDocument is a service method, not a constructor
       claude.AISearchDocument({
         documentUri: '',
         query: 'find methods',
@@ -31,6 +36,18 @@ describe('ClaudeService', () => {
     );
     assert.isFalse(
       isClaudeDocumentDownloadError(new Error('Claude rate limit exceeded')),
+    );
+  });
+
+  it('isClaudeContextLimitError matches oversized requests', () => {
+    assert.isTrue(
+      isClaudeContextLimitError(
+        new Error('prompt is too long for the model context window'),
+      ),
+    );
+    assert.isTrue(isClaudeContextLimitError({ status: 413 }));
+    assert.isFalse(
+      isClaudeContextLimitError(new Error('Claude rate limit exceeded')),
     );
   });
 });
