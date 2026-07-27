@@ -101,6 +101,18 @@ export function isClaudeDocumentDownloadError(error: unknown): boolean {
   return /Unable to download the file|verify the URL/i.test(msg);
 }
 
+/** True when the complete request is larger than Claude can accept. */
+export function isClaudeContextLimitError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    if ((error as { status?: number }).status === 413) {
+      return true;
+    }
+  }
+  return /context (?:length|limit|window)|input (?:is )?too long|prompt (?:is )?too long|maximum context|too many (?:input )?tokens|request too large|exceeds?.*token limit/i.test(
+    messageFromUnknownError(error),
+  );
+}
+
 export type ClaudeSearchRequest = {
   /** Public HTTP(S) URL when Claude can fetch the document directly. */
   documentUri?: string;
@@ -122,6 +134,7 @@ export type ClaudeSearchResult = {
 export type ClaudeTagSummaryRequest = {
   apiKey: string;
   prompt: string;
+  tag: string;
   signal?: AbortSignal;
 };
 
@@ -137,9 +150,11 @@ function throwClaudeRequestError(
     startedAt: number;
     failureAction: string;
     retryAction: string;
+    contextLimitMessage?: string;
   },
 ): never {
-  const { signal, startedAt, failureAction, retryAction } = options;
+  const { signal, startedAt, failureAction, retryAction, contextLimitMessage } =
+    options;
   const aborted =
     signal?.aborted || (error instanceof Error && error.name === 'AbortError');
   if (aborted) {
@@ -154,6 +169,9 @@ function throwClaudeRequestError(
     elapsedMs: Date.now() - startedAt,
     error,
   });
+  if (contextLimitMessage && isClaudeContextLimitError(error)) {
+    throw new Error(contextLimitMessage);
+  }
   if (isNetworkTransportError(error)) {
     throw new Error(
       'Network connection changed while contacting Claude. Check your internet or VPN and try again.',
@@ -282,7 +300,7 @@ export class ClaudeService {
   async summarizeTag(
     request: ClaudeTagSummaryRequest,
   ): Promise<ClaudeTagSummaryResult> {
-    const { apiKey, prompt, signal } = request;
+    const { apiKey, prompt, signal, tag } = request;
     const client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true,
@@ -321,6 +339,7 @@ Return exactly two short, complete sentences, one in each structured field. Do n
         startedAt,
         failureAction: 'generate tag summary',
         retryAction: 'generating another summary',
+        contextLimitMessage: `Claude could not summarize "${tag}" because the complete set of matching quotes is larger than the model's context window. No quotes were omitted. Reduce the number or size of quotes with this tag and try again.`,
       });
     }
   }

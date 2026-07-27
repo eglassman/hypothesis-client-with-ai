@@ -112,6 +112,7 @@ export function useTagSummaryGeneration({
     const result = await claude.summarizeTag({
       apiKey: claude.apiKey(),
       prompt: context.prompt,
+      tag,
       signal,
     });
     if (signal.aborted) {

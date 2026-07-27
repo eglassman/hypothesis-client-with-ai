@@ -2,14 +2,10 @@ import { annotationFullQuote } from '../node-link/graph-model';
 import type { NodeLinkGraph, NodeLinkQuote } from '../node-link/graph-model';
 import type { ManualTagEdge } from '../node-link/graph-state';
 
-export const MAX_TAG_SUMMARY_QUOTES = 30;
-export const MAX_TAG_SUMMARY_QUOTE_CHARS = 16_000;
-
 export type ClaudeTagSummaryPrompt = {
   prompt: string;
   relationships: ManualTagEdge[];
   quotes: NodeLinkQuote[];
-  totalQuoteCount: number;
   sourceFingerprint: string;
 };
 
@@ -22,17 +18,14 @@ function compareRelationships(a: ManualTagEdge, b: ManualTagEdge) {
   );
 }
 
-function quoteTimestamp(quote: NodeLinkQuote) {
-  return quote.annotation.updated || quote.annotation.created || '';
-}
-
 function fullQuoteText(quote: NodeLinkQuote) {
   return annotationFullQuote(quote.annotation) || quote.quote;
 }
 
-function compareQuotesByRecency(a: NodeLinkQuote, b: NodeLinkQuote) {
+function compareQuotes(a: NodeLinkQuote, b: NodeLinkQuote) {
   return (
-    quoteTimestamp(b).localeCompare(quoteTimestamp(a)) ||
+    a.documentLabel.localeCompare(b.documentLabel) ||
+    a.documentUri.localeCompare(b.documentUri) ||
     a.id.localeCompare(b.id)
   );
 }
@@ -44,40 +37,11 @@ export function directRelationshipsForTag(graph: NodeLinkGraph, tag: string) {
     .sort(compareRelationships);
 }
 
-/** Return only quotes carrying `tag`, newest first. */
-export function recentQuotesForTag(graph: NodeLinkGraph, tag: string) {
+/** Return every quote carrying `tag` in stable document order. */
+export function quotesForTag(graph: NodeLinkGraph, tag: string) {
   return graph.quotes
     .filter(quote => quote.tags.includes(tag))
-    .sort(compareQuotesByRecency);
-}
-
-/**
- * Keep a newest-first prefix of complete quotes within the prompt budget.
- * A single unusually long newest quote is still included whole.
- */
-export function selectTagSummaryQuotes(quotes: NodeLinkQuote[]) {
-  const selected: NodeLinkQuote[] = [];
-  let selectedCharacters = 0;
-
-  for (const quote of [...quotes].sort(compareQuotesByRecency)) {
-    if (selected.length >= MAX_TAG_SUMMARY_QUOTES) {
-      break;
-    }
-    const quoteCharacters =
-      fullQuoteText(quote).length +
-      quote.documentLabel.length +
-      quoteTimestamp(quote).length;
-    if (
-      selected.length > 0 &&
-      selectedCharacters + quoteCharacters > MAX_TAG_SUMMARY_QUOTE_CHARS
-    ) {
-      break;
-    }
-    selected.push(quote);
-    selectedCharacters += quoteCharacters;
-  }
-
-  return selected;
+    .sort(compareQuotes);
 }
 
 function hashFNV1a(text: string) {
@@ -89,19 +53,18 @@ function hashFNV1a(text: string) {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Fingerprint every direct edge and tagged quote, not only prompt-selected quotes. */
+/** Fingerprint every direct edge and tagged quote included in the prompt. */
 export function tagSummarySourceFingerprint(graph: NodeLinkGraph, tag: string) {
   const relationships = directRelationshipsForTag(graph, tag).map(edge => ({
     sourceTag: edge.sourceTag,
     connectionType: edge.connectionType,
     targetTag: edge.targetTag,
   }));
-  const quotes = recentQuotesForTag(graph, tag)
+  const quotes = quotesForTag(graph, tag)
     .map(quote => ({
       id: quote.id,
       quote: fullQuoteText(quote),
       documentUri: quote.documentUri,
-      updatedAt: quoteTimestamp(quote),
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
@@ -113,8 +76,7 @@ export function buildClaudeTagSummaryPrompt(
   tag: string,
 ): ClaudeTagSummaryPrompt {
   const relationships = directRelationshipsForTag(graph, tag);
-  const allQuotes = recentQuotesForTag(graph, tag);
-  const quotes = selectTagSummaryQuotes(allQuotes);
+  const quotes = quotesForTag(graph, tag);
   const relationshipText = relationships.length
     ? relationships
         .map(
@@ -128,7 +90,6 @@ export function buildClaudeTagSummaryPrompt(
         .map(
           (quote, index) => `Quote ${index + 1}
 Document: ${quote.documentLabel || 'Untitled document'}
-Updated: ${quoteTimestamp(quote) || 'Unknown'}
 Text: ${fullQuoteText(quote)}`,
         )
         .join('\n\n')
@@ -137,7 +98,6 @@ Text: ${fullQuoteText(quote)}`,
   return {
     relationships,
     quotes,
-    totalQuoteCount: allQuotes.length,
     sourceFingerprint: tagSummarySourceFingerprint(graph, tag),
     prompt: `Summarize what the tag "${tag}" means in this collection using only the evidence below.
 
@@ -146,7 +106,9 @@ Every listed relationship directly includes "${tag}". Do not infer relationships
 Direct relationships (${relationships.length}):
 ${relationshipText}
 
-Quotes tagged "${tag}" (${quotes.length} of ${allQuotes.length}, newest first):
+All quotes tagged "${tag}" are included below. Consider the entire evidence set; do not privilege quotes based on their order.
+
+Quotes tagged "${tag}" (${quotes.length} total):
 ${quoteText}`,
   };
 }

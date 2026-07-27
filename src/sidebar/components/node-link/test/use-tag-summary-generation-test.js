@@ -114,6 +114,8 @@ describe('useTagSummaryGeneration', () => {
 
     assert.include(claude.summarizeTag.firstCall.args[0].prompt, '"Character"');
     assert.include(claude.summarizeTag.secondCall.args[0].prompt, '"Theme"');
+    assert.equal(claude.summarizeTag.firstCall.args[0].tag, 'Character');
+    assert.equal(claude.summarizeTag.secondCall.args[0].tag, 'Theme');
     assert.calledTwice(saveState);
     assert.lengthOf(saveState.secondCall.args[0].tagSummaries, 3);
   });

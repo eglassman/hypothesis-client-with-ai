@@ -1,10 +1,7 @@
 import {
   buildClaudeTagSummaryPrompt,
   directRelationshipsForTag,
-  MAX_TAG_SUMMARY_QUOTE_CHARS,
-  MAX_TAG_SUMMARY_QUOTES,
-  recentQuotesForTag,
-  selectTagSummaryQuotes,
+  quotesForTag,
   tagSummarySourceFingerprint,
 } from '../claude-tag-summary';
 
@@ -13,13 +10,14 @@ function quote({
   text,
   tags = ['Character'],
   updated = '2026-07-01T00:00:00Z',
+  documentLabel = `Document ${id}`,
 }) {
   return {
     id,
     quote: text,
     tags,
     documentUri: `https://example.com/${id}`,
-    documentLabel: `Document ${id}`,
+    documentLabel,
     sourceUrl: '',
     annotation: {
       id,
@@ -80,7 +78,7 @@ describe('claude-tag-summary', () => {
       ['character-action'],
     );
     assert.deepEqual(
-      recentQuotesForTag(input, 'Character').map(item => item.id),
+      quotesForTag(input, 'Character').map(item => item.id),
       ['newer-character', 'older-character'],
     );
     assert.include(prompt.prompt, 'Character motivates Action');
@@ -89,21 +87,28 @@ describe('claude-tag-summary', () => {
     assert.notInclude(prompt.prompt, 'Theme-only quote.');
   });
 
-  it('selects recent whole quotes without truncating them', () => {
-    const longText = 'x'.repeat(MAX_TAG_SUMMARY_QUOTE_CHARS + 100);
-    const quotes = [
+  it('includes every matching quote without truncation or a prompt budget', () => {
+    const quotes = Array.from({ length: 35 }, (_, index) =>
       quote({
-        id: 'newest-long',
-        text: longText,
-        updated: '2026-07-03T00:00:00Z',
+        id: `quote-${index}`,
+        text: `${'evidence '.repeat(80)}complete quote ${index}`,
       }),
-      quote({ id: 'older-short', text: 'Older short quote.' }),
-    ];
+    );
 
-    const selected = selectTagSummaryQuotes(quotes);
+    const prompt = buildClaudeTagSummaryPrompt(graph({ quotes }), 'Character');
 
-    assert.lengthOf(selected, 1);
-    assert.equal(selected[0].quote, longText);
+    assert.lengthOf(prompt.quotes, quotes.length);
+    assert.include(prompt.prompt, 'Quotes tagged "Character" (35 total):');
+    assert.include(
+      prompt.prompt,
+      'Consider the entire evidence set; do not privilege quotes based on their order.',
+    );
+    for (const item of quotes) {
+      assert.include(
+        prompt.prompt,
+        item.annotation.target[0].selector[0].exact,
+      );
+    }
   });
 
   it('sends the complete annotation quote instead of its display preview', () => {
@@ -120,20 +125,34 @@ describe('claude-tag-summary', () => {
     assert.notInclude(prompt.prompt, evidence.quote);
   });
 
-  it('caps the number of quotes using newest-first order', () => {
-    const quotes = Array.from({ length: MAX_TAG_SUMMARY_QUOTES + 1 }, (_, i) =>
+  it('orders quotes by document rather than recency', () => {
+    const quotes = [
       quote({
-        id: `quote-${i}`,
-        text: `Quote ${i}`,
-        updated: new Date(Date.UTC(2026, 0, i + 1)).toISOString(),
+        id: 'newest',
+        text: 'Newest quote.',
+        updated: '2026-07-03T00:00:00Z',
+        documentLabel: 'Zulu document',
       }),
-    ).sort((a, b) => b.annotation.updated.localeCompare(a.annotation.updated));
+      quote({
+        id: 'oldest',
+        text: 'Oldest quote.',
+        updated: '2020-01-01T00:00:00Z',
+        documentLabel: 'Alpha document',
+      }),
+    ];
 
-    const selected = selectTagSummaryQuotes(quotes);
+    const prompt = buildClaudeTagSummaryPrompt(graph({ quotes }), 'Character');
 
-    assert.lengthOf(selected, MAX_TAG_SUMMARY_QUOTES);
-    assert.equal(selected[0].id, `quote-${MAX_TAG_SUMMARY_QUOTES}`);
-    assert.equal(selected.at(-1).id, 'quote-1');
+    assert.deepEqual(
+      prompt.quotes.map(item => item.id),
+      ['oldest', 'newest'],
+    );
+    assert.isBelow(
+      prompt.prompt.indexOf('Oldest quote.'),
+      prompt.prompt.indexOf('Newest quote.'),
+    );
+    assert.notInclude(prompt.prompt, 'Updated:');
+    assert.notInclude(prompt.prompt, 'newest first');
   });
 
   it('marks only changes to direct relationships or tagged quotes as stale', () => {
@@ -189,9 +208,26 @@ describe('claude-tag-summary', () => {
       }),
       'Character',
     );
+    const retimestampedQuote = tagSummarySourceFingerprint(
+      graph({
+        quotes: input.quotes.map(item =>
+          item.id === 'older-character'
+            ? {
+                ...item,
+                annotation: {
+                  ...item.annotation,
+                  updated: '2027-01-01T00:00:00Z',
+                },
+              }
+            : item,
+        ),
+      }),
+      'Character',
+    );
 
     assert.equal(unrelated, original);
     assert.equal(unrelatedQuote, original);
+    assert.equal(retimestampedQuote, original);
     assert.notEqual(direct, original);
     assert.notEqual(taggedQuote, original);
   });
